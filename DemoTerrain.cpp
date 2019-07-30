@@ -5,7 +5,7 @@
 //  This is part of Assignment1 files.
 //
 //	The program generates and loads the mesh data for a terrain floor (100 verts, 81 elems).
-//  Required files:  Terrain.vert (vertex shader), Terrain.frag (fragment shader), HeightMap1.tga  (height map)
+//  Required files:  DemoTerrain.vert (vertex shader), DemoTerrain.frag (fragment shader), HeightMap1.tga  (height map)
 //  ========================================================================
 
 #include <iostream>
@@ -110,8 +110,8 @@ void initialise()
 //--------Load terrain height map-----------
 	loadTextures();
 //--------Load shaders----------------------
-	GLuint shaderv = loadShader(GL_VERTEX_SHADER, "Terrain.vert");
-	GLuint shaderf = loadShader(GL_FRAGMENT_SHADER, "Terrain.frag");
+	GLuint shaderv = loadShader(GL_VERTEX_SHADER, "DemoTerrain.vert");
+	GLuint shaderf = loadShader(GL_FRAGMENT_SHADER, "DemoTerrain.frag");
 
 	GLuint program = glCreateProgram();
 	glAttachShader(program, shaderv);
