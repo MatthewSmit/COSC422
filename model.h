@@ -21,7 +21,7 @@ class Camera {
 public:
     Camera() {
         projection = glm::perspectiveFov(60.0f * DEGREE_TO_RADIAN, 800.0f, 600.0f, 1.0f, 1000.0f);
-        view = glm::lookAt(glm::vec3(0.0, 5.0, 12.0), glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
+        view = glm::lookAt(glm::vec3(0.0, 12.0, 20.0), glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
     }
 
     bool isDirty() const {
@@ -60,7 +60,7 @@ public:
         glDeleteVertexArrays(1, &vertexArray);
     }
 
-    virtual void update() = 0;
+    virtual void update(float delta) = 0;
     virtual void render(const Scene& scene) = 0;
 
 protected:
@@ -102,8 +102,12 @@ public:
     }
 
     void update() {
+        int timeSinceStart = glutGet(GLUT_ELAPSED_TIME);
+        int deltaTime = timeSinceStart - oldTimeSinceStart;
+        oldTimeSinceStart = timeSinceStart;
+
         for (const auto& model : models) {
-            model->update();
+            model->update(deltaTime * 0.001f);
         }
     }
 
@@ -123,4 +127,5 @@ private:
     std::unique_ptr<Camera> camera;
     SceneInputData sceneUniformData{};
     GLuint sceneUniformBuffer{};
+    int oldTimeSinceStart{};
 };

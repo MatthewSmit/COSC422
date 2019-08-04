@@ -92,6 +92,28 @@ public:
         verifyProgram(program);
     }
 
+    Shader(const std::string& vertexShaderFile,
+           const std::string& tesselationControlShaderFile,
+           const std::string& tesselationEvaluationShaderFile,
+           const std::string& geometryShaderFile,
+           const std::string& fragmentShaderFile) {
+        GLuint vertexShader = loadShader(GL_VERTEX_SHADER, vertexShaderFile);
+        GLuint tesselationControlShader = loadShader(GL_TESS_CONTROL_SHADER, tesselationControlShaderFile);
+        GLuint tesselationEvaluationShader = loadShader(GL_TESS_EVALUATION_SHADER, tesselationEvaluationShaderFile);
+        GLuint geometryShader = loadShader(GL_GEOMETRY_SHADER, geometryShaderFile);
+        GLuint fragmentShader = loadShader(GL_FRAGMENT_SHADER, fragmentShaderFile);
+
+        program = glCreateProgram();
+        glAttachShader(program, vertexShader);
+        glAttachShader(program, tesselationControlShader);
+        glAttachShader(program, tesselationEvaluationShader);
+        glAttachShader(program, geometryShader);
+        glAttachShader(program, fragmentShader);
+        glLinkProgram(program);
+
+        verifyProgram(program);
+    }
+
     ~Shader() {
         glDeleteProgram(program);
     }

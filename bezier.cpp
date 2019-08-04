@@ -12,6 +12,7 @@ public:
     explicit Floor(const Scene& scene) {
         shader = std::make_unique<Shader>("data/floor.vert", "data/floor.frag");
 
+        // Create a grid of lines from -TOTAL_VERTICES to TOTAL_VERTICES in both x and z
         glm::vec2 VERTEX_DATA[TOTAL_VERTICES]{};
 
         for (auto i = -GRID_SIZE, j = 0; i <= GRID_SIZE; i++, j += 4) {
@@ -21,14 +22,17 @@ public:
             VERTEX_DATA[j + 3] = glm::vec2{GRID_SIZE, i};
         }
 
+        // Send buffer data to GPU
         glNamedBufferStorage(buffers[VERTEX_BUFFER], sizeof(VERTEX_DATA), VERTEX_DATA, 0);
 
+        // Setup vertex attributes
         glEnableVertexArrayAttrib(vertexArray, 0);
         glVertexArrayAttribFormat(vertexArray, 0, 2, GL_FLOAT, GL_FALSE, 0);
 
         glVertexArrayVertexBuffer(vertexArray, 0, buffers[VERTEX_BUFFER], 0, sizeof(VERTEX_DATA[0]));
         glVertexArrayAttribBinding(vertexArray, 0, 0);
 
+        // Setup uniform blocks
         GLuint sceneInputDataIndex = glGetUniformBlockIndex(shader->program, "SceneInputData");
         glUniformBlockBinding(shader->program, sceneInputDataIndex, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, scene.getSceneUniformBuffer());
@@ -36,7 +40,7 @@ public:
 
     ~Floor() override = default;
 
-    void update() override {
+    void update(float) override {
     }
 
     void render(const Scene& scene) override {
@@ -52,49 +56,94 @@ private:
 class BezierModel : public Model {
 public:
     BezierModel(const Scene& scene, const std::string& inputFile) {
-        shader = std::make_unique<Shader>("data/bezier.vert", "data/bezier.tesc", "data/bezier.tese", "data/bezier.frag");
+        shader = std::make_unique<Shader>("data/bezier.vert",
+                "data/bezier.tesc",
+                "data/bezier.tese",
+                "data/bezier.frag");
 
-//        glNamedBufferStorage(buffers[INDEX_BUFFER], sizeof(VERTEX_DATA), VERTEX_DATA, 0);
-//        glNamedBufferStorage(buffers[VERTEX_BUFFER], sizeof(VERTEX_DATA), VERTEX_DATA, 0);
-        glNamedBufferStorage(buffers[UNIFORM_BUFFER], sizeof(modelInputData), &modelInputData, 0);
+        auto vertexData = loadModelData(inputFile, numberVertices);
 
-//        glVertexArrayElementBuffer(vertexArray, buffers[INDEX_BUFFER]);
-////
-////        glEnableVertexArrayAttrib(vertexArray, 0);
-////        glVertexArrayAttribFormat(vertexArray, 0, 2, GL_FLOAT, GL_FALSE, 0);
-////
-////        glVertexArrayVertexBuffer(vertexArray, 0, buffers[VERTEX_BUFFER], 0, sizeof(VERTEX_DATA[0]));
-////        glVertexArrayAttribBinding(vertexArray, 0, 0);
+        // Send buffer data to GPU
+        glNamedBufferStorage(buffers[VERTEX_BUFFER], sizeof(glm::vec3) * numberVertices, vertexData.get(), 0);
+        glNamedBufferStorage(buffers[UNIFORM_BUFFER], sizeof(modelInputData), &modelInputData, GL_DYNAMIC_STORAGE_BIT);
 
+        // Setup vertex attributes
+        glEnableVertexArrayAttrib(vertexArray, 0);
+        glVertexArrayAttribFormat(vertexArray, 0, 3, GL_FLOAT, GL_FALSE, 0);
+
+        glVertexArrayVertexBuffer(vertexArray, 0, buffers[VERTEX_BUFFER], 0, sizeof(glm::vec3));
+        glVertexArrayAttribBinding(vertexArray, 0, 0);
+
+        // Setup uniform blocks
         GLuint sceneInputDataIndex = glGetUniformBlockIndex(shader->program, "SceneInputData");
         glUniformBlockBinding(shader->program, sceneInputDataIndex, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, scene.getSceneUniformBuffer());
 
         GLuint modelInputDataIndex = glGetUniformBlockIndex(shader->program, "ModelInputData");
-        glUniformBlockBinding(shader->program, modelInputDataIndex, 0);
-        glBindBufferBase(GL_UNIFORM_BUFFER, 0, buffers[UNIFORM_BUFFER]);
-
-        modelInputData.world = glm::identity<glm::mat4>();
+        glUniformBlockBinding(shader->program, modelInputDataIndex, 1);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 1, buffers[UNIFORM_BUFFER]);
     }
 
     ~BezierModel() override = default;
 
-    void update() override {
+    void update(float delta) override {
+        rotateX += delta / 4;
+        rotateY += delta;
+
+        modelInputData.world = glm::translate(glm::identity<glm::mat4>(), glm::vec3{0, 5, 0}) *
+                glm::rotate(glm::identity<glm::mat4>(), rotateX, glm::vec3{1, 0, 0}) *
+                glm::rotate(glm::identity<glm::mat4>(), rotateY, glm::vec3{0, 1, 0}) *
+                glm::scale(glm::identity<glm::mat4>(), glm::vec3{2});
+        glNamedBufferSubData(buffers[UNIFORM_BUFFER], 0, sizeof(modelInputData), &modelInputData);
     }
 
     void render(const Scene& scene) override {
-
+        glPatchParameteri(GL_PATCH_VERTICES, 16);
+        glBindVertexArray(vertexArray);
+        glUseProgram(shader->program);
+        glDrawArrays(GL_PATCHES, 0, numberVertices);
     }
 
 private:
     struct {
         glm::mat4 world{};
     } modelInputData{};
+
+    int numberVertices{};
+    float rotateY{};
+    float rotateX{};
+
+    static std::unique_ptr<glm::vec3[]> loadModelData(const std::string &inputFile, int& numberVertices) {
+        std::ifstream file(inputFile.c_str());
+        if(!file.good()) {
+            std::cerr << "Error opening patch file: " << inputFile << std::endl;
+            throw std::exception{};
+        }
+
+        file >> numberVertices;
+
+        auto vertexData = std::unique_ptr<glm::vec3[]>{new glm::vec3[numberVertices]};
+        for (auto i = 0; i < numberVertices; i++) {
+            float x, y, z;
+            file >> x >> y >> z;
+            vertexData[i] = glm::vec3{x, y, z};
+        }
+
+        file.close();
+
+        return vertexData;
+    }
 };
 
 std::unique_ptr<Scene> scene;
 
-GLAPIENTRY void debugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei, const GLchar* message, const void*) {
+GLAPIENTRY void debugCallback(GLenum source,
+        GLenum type,
+        GLuint id,
+        GLenum severity,
+        GLsizei,
+        const GLchar* message,
+        const void*) {
     static const char* SOURCE[] = {
             "API",
             "Window System",
@@ -129,7 +178,7 @@ GLAPIENTRY void debugCallback(GLenum source, GLenum type, GLuint id, GLenum seve
 
 void initialise() {
     scene = std::make_unique<Scene>();
-    scene->addModel(std::make_unique<BezierModel>(*scene, "PatchVerts_Teapot.txt"));
+    scene->addModel(std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt"));
     scene->addModel(std::make_unique<Floor>(*scene));
 
     glEnable(GL_DEPTH_TEST);

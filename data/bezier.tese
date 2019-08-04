@@ -1,6 +1,8 @@
-#version 400 core
+#version 450 core
 
 layout(quads, equal_spacing, ccw) in;
+
+layout(location = 0) out vec3 normal;
 
 layout(std140) uniform SceneInputData {
     mat4 projectionView;
@@ -10,32 +12,42 @@ layout(std140) uniform ModelInputData {
     mat4 world;
 };
 
-void main() {
-    mat4 worldProjectionView = world * projectionView;
+vec4 bezierTangent(vec4 p1, vec4 p2, vec4 p3, vec4 p4, float t) {
+    return normalize(p1 * (-1 + 2 * t - t * t) +
+        p2 * (1 - 4 * t + 3 * t * t) +
+        p3 * (2 * t - 3 * t * t) +
+        p4 * (t * t));
+}
 
+void main() {
     float u = gl_TessCoord.x;
     float v = gl_TessCoord.y;
 
-    float iu2 = (1 - u) * (1 - u);
-    float iv2 = (1 - v) * (1 - v);
-    float _2viv = 2 * v * (1 - v);
-    float _2iuu = 2 * (1 - u) * u;
-    float u2 = u * u;
-    float v2 = v * v;
+    float Au = (1 - u) * (1 - u) * (1 - u);
+    float Bu = 3 * u * (1 - u) * (1 - u);
+    float Cu = 3 * u * u * (1 - u);
+    float Du = u * u * u;
 
-    vec4 p00 = gl_in[0].gl_Position;
-    vec4 p01 = gl_in[1].gl_Position;
-    vec4 p02 = gl_in[2].gl_Position;
-    vec4 p10 = gl_in[3].gl_Position;
-    vec4 p11 = gl_in[4].gl_Position;
-    vec4 p12 = gl_in[5].gl_Position;
-    vec4 p20 = gl_in[6].gl_Position;
-    vec4 p21 = gl_in[7].gl_Position;
-    vec4 p22 = gl_in[8].gl_Position;
+    float Av = (1 - v) * (1 - v) * (1 - v);
+    float Bv = 3 * v * (1 - v) * (1 - v);
+    float Cv = 3 * v * v * (1 - v);
+    float Dv = v * v * v;
 
-    vec4 position = iu2 * (iv2 * p00 + _2viv * p10 + v2 * p20)
-    + _2iuu * (iv2 * p01 + _2viv * p11 + v2 * p21)
-    + u2 * (iv2 * p02 + _2viv * p12 + v2 * p22);
+    vec4 p1 = Av * gl_in[0].gl_Position + Bv * gl_in[1].gl_Position + Cv * gl_in[2].gl_Position + Dv * gl_in[3].gl_Position;
+    vec4 p2 = Av * gl_in[4].gl_Position + Bv * gl_in[5].gl_Position + Cv * gl_in[6].gl_Position + Dv * gl_in[7].gl_Position;
+    vec4 p3 = Av * gl_in[8].gl_Position + Bv * gl_in[9].gl_Position + Cv * gl_in[10].gl_Position + Dv * gl_in[11].gl_Position;
+    vec4 p4 = Av * gl_in[12].gl_Position + Bv * gl_in[13].gl_Position + Cv * gl_in[14].gl_Position + Dv * gl_in[15].gl_Position;
 
-    gl_Position = worldProjectionView * position;
+    vec4 position = Au * p1 + Bu * p2 + Cu * p3 + Du * p4;
+
+    vec4 q1 = Au * gl_in[0].gl_Position + Bu * gl_in[4].gl_Position + Cu * gl_in[8].gl_Position + Du * gl_in[12].gl_Position;
+    vec4 q2 = Au * gl_in[1].gl_Position + Bu * gl_in[5].gl_Position + Cu * gl_in[9].gl_Position + Du * gl_in[13].gl_Position;
+    vec4 q3 = Au * gl_in[2].gl_Position + Bu * gl_in[6].gl_Position + Cu * gl_in[10].gl_Position + Du * gl_in[14].gl_Position;
+    vec4 q4 = Au * gl_in[3].gl_Position + Bu * gl_in[7].gl_Position + Cu * gl_in[11].gl_Position + Du * gl_in[15].gl_Position;
+
+    vec4 tangentA = bezierTangent(p1, p2, p3, p4, u);
+    vec4 tangentB = bezierTangent(q1, q2, q3, q4, v);
+
+    gl_Position = projectionView * world * position;
+    normal = normalize(mat3(world) * cross(tangentA.xyz, tangentB.xyz));
 }
