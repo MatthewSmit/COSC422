@@ -86,14 +86,18 @@ public:
 
     ~BezierModel() override = default;
 
+    void setScale(float newScale) {
+        scale = newScale;
+    }
+
     void update(float delta) override {
-        rotateX += delta / 4;
+//        rotateX += delta / 4;
         rotateY += delta;
 
-        modelInputData.world = glm::translate(glm::identity<glm::mat4>(), glm::vec3{0, 5, 0}) *
+        modelInputData.world = glm::translate(glm::identity<glm::mat4>(), glm::vec3{0, 2, 0}) *
                 glm::rotate(glm::identity<glm::mat4>(), rotateX, glm::vec3{1, 0, 0}) *
                 glm::rotate(glm::identity<glm::mat4>(), rotateY, glm::vec3{0, 1, 0}) *
-                glm::scale(glm::identity<glm::mat4>(), glm::vec3{2});
+                glm::scale(glm::identity<glm::mat4>(), glm::vec3{scale});
         glNamedBufferSubData(buffers[UNIFORM_BUFFER], 0, sizeof(modelInputData), &modelInputData);
     }
 
@@ -112,6 +116,7 @@ private:
     int numberVertices{};
     float rotateY{};
     float rotateX{};
+    float scale{1};
 
     static std::unique_ptr<glm::vec3[]> loadModelData(const std::string &inputFile, int& numberVertices) {
         std::ifstream file(inputFile.c_str());
@@ -178,7 +183,10 @@ GLAPIENTRY void debugCallback(GLenum source,
 
 void initialise() {
     scene = std::make_unique<Scene>();
-    scene->addModel(std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt"));
+//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
+    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
+    model->setScale(0.5);
+    scene->addModel(std::move(model));
     scene->addModel(std::make_unique<Floor>(*scene));
 
     glEnable(GL_DEPTH_TEST);

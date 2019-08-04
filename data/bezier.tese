@@ -6,10 +6,9 @@ layout(location = 0) out vec3 normal;
 
 layout(std140) uniform SceneInputData {
     mat4 projectionView;
-};
-
-layout(std140) uniform ModelInputData {
-    mat4 world;
+    vec3 cameraPosition;
+    vec3 directionLight;
+    float ambientLight;
 };
 
 vec4 bezierTangent(vec4 p1, vec4 p2, vec4 p3, vec4 p4, float t) {
@@ -48,6 +47,6 @@ void main() {
     vec4 tangentA = bezierTangent(p1, p2, p3, p4, u);
     vec4 tangentB = bezierTangent(q1, q2, q3, q4, v);
 
-    gl_Position = projectionView * world * position;
-    normal = normalize(mat3(world) * cross(tangentA.xyz, tangentB.xyz));
+    gl_Position = projectionView * position;
+    normal = normalize(cross(tangentA.xyz, tangentB.xyz));
 }

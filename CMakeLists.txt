@@ -9,6 +9,8 @@ find_package(GLEW REQUIRED)
 find_package(GLUT REQUIRED)
 find_package(GLM REQUIRED)
 
+set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++ -static")
+
 add_executable(cosc422-assignment-1-mjs351-bezier
         model.h shader.h util.h
 
