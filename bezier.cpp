@@ -141,6 +141,7 @@ private:
 };
 
 std::unique_ptr<Scene> scene;
+bool wireframeMode{false};
 
 GLAPIENTRY void debugCallback(GLenum source,
         GLenum type,
@@ -198,6 +199,12 @@ void initialise() {
     glClearColor(1, 1, 1, 1);
 }
 
+void keyboardCallback(unsigned char key, int, int) {
+    if (key == 'w') {
+        wireframeMode = !wireframeMode;
+    }
+}
+
 void update(int) {
     scene->update();
     glutTimerFunc(50, update, 0);
@@ -205,6 +212,8 @@ void update(int) {
 }
 
 void display() {
+    glPolygonMode(GL_FRONT_AND_BACK, wireframeMode ? GL_LINE : GL_FILL);
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     scene->render();
     glutSwapBuffers();
@@ -239,6 +248,7 @@ int main(int argc, char* argv[]) {
 
     initialise();
     glutDisplayFunc(display);
+    glutKeyboardFunc(keyboardCallback);
     glutTimerFunc(50, update, 0);
     glutMainLoop();
 }
