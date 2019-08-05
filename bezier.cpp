@@ -94,10 +94,10 @@ public:
 //        rotateX += delta / 4;
         rotateY += delta;
 
-        modelInputData.world = glm::translate(glm::identity<glm::mat4>(), glm::vec3{0, 2, 0}) *
-                glm::rotate(glm::identity<glm::mat4>(), rotateX, glm::vec3{1, 0, 0}) *
-                glm::rotate(glm::identity<glm::mat4>(), rotateY, glm::vec3{0, 1, 0}) *
-                glm::scale(glm::identity<glm::mat4>(), glm::vec3{scale});
+        modelInputData.world = glm::translate(glm::mat4(1), glm::vec3{0, 2, 0}) *
+                glm::rotate(glm::mat4(1), rotateX, glm::vec3{1, 0, 0}) *
+                glm::rotate(glm::mat4(1), rotateY, glm::vec3{0, 1, 0}) *
+                glm::scale(glm::mat4(1), glm::vec3{scale});
         glNamedBufferSubData(buffers[UNIFORM_BUFFER], 0, sizeof(modelInputData), &modelInputData);
     }
 
