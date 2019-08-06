@@ -7,6 +7,14 @@
 #include "model.h"
 #include "shader.h"
 
+bool keyState[256] = {};
+bool specialKeyState[GLUT_KEY_INSERT + 1] = {};
+int oldTimeSinceStart{};
+
+std::unique_ptr<Scene> scene;
+bool wireframeMode{false};
+bool exploding{false};
+
 class Floor : public Model {
 public:
     explicit Floor(const Scene& scene) {
@@ -91,8 +99,12 @@ public:
     }
 
     void update(float delta) override {
-//        rotateX += delta / 4;
-        rotateY += delta;
+        if (!exploding) {
+            rotateY += delta / 4;
+            modelInputData.time = 0;
+        } else {
+            modelInputData.time += delta;
+        }
 
         modelInputData.world = glm::translate(glm::mat4(1), glm::vec3{0, 2, 0}) *
                 glm::rotate(glm::mat4(1), rotateX, glm::vec3{1, 0, 0}) *
@@ -111,6 +123,7 @@ public:
 private:
     struct {
         glm::mat4 world{};
+        float time{};
     } modelInputData{};
 
     int numberVertices{};
@@ -139,9 +152,6 @@ private:
         return vertexData;
     }
 };
-
-std::unique_ptr<Scene> scene;
-bool wireframeMode{false};
 
 GLAPIENTRY void debugCallback(GLenum source,
         GLenum type,
@@ -184,18 +194,16 @@ GLAPIENTRY void debugCallback(GLenum source,
 
 void initialise() {
     scene = std::make_unique<Scene>();
-//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
-    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
-    model->setScale(0.5);
+    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
+    model->setScale(2);
+//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
+//    model->setScale(0.5);
     scene->addModel(std::move(model));
     scene->addModel(std::make_unique<Floor>(*scene));
 
     glEnable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
     glEnable(GL_MULTISAMPLE);
-    glEnable(GL_LINE_SMOOTH);
 
-//    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glClearColor(1, 1, 1, 1);
 }
 
@@ -203,10 +211,45 @@ void keyboardCallback(unsigned char key, int, int) {
     if (key == 'w') {
         wireframeMode = !wireframeMode;
     }
+
+    if (key == ' ') {
+        exploding = !exploding;
+    }
+
+    keyState[key] = true;
+}
+
+void keyboardUpCallback(unsigned char key, int, int) {
+    keyState[key] = false;
+}
+
+void specialCallback(int key, int, int) {
+    if (key >= 0 && key <= GLUT_KEY_INSERT) {
+        specialKeyState[key] = true;
+    }
+}
+
+void specialUpCallback(int key, int, int) {
+    if (key >= 0 && key <= GLUT_KEY_INSERT) {
+        specialKeyState[key] = false;
+    }
 }
 
 void update(int) {
-    scene->update();
+    int timeSinceStart = glutGet(GLUT_ELAPSED_TIME);
+    int deltaTime = timeSinceStart - oldTimeSinceStart;
+    oldTimeSinceStart = timeSinceStart;
+
+    float delta = deltaTime * 0.001f;
+
+    if (specialKeyState[GLUT_KEY_UP]) {
+        scene->getCamera().translate(glm::vec3{0, 0, -10 * delta});
+    }
+    if (specialKeyState[GLUT_KEY_DOWN]) {
+        scene->getCamera().translate(glm::vec3{0, 0, 10 * delta});
+    }
+
+    scene->update(delta);
     glutTimerFunc(50, update, 0);
     glutPostRedisplay();
 }
@@ -226,6 +269,7 @@ int main(int argc, char* argv[]) {
     glutInitWindowSize(800, 600);
     glutInitContextVersion(4, 5);
     glutInitContextProfile(GLUT_CORE_PROFILE);
+    glutSetKeyRepeat(false);
 #ifndef NDEBUG
     glutInitContextFlags(GLUT_DEBUG);
 #endif
@@ -249,6 +293,9 @@ int main(int argc, char* argv[]) {
     initialise();
     glutDisplayFunc(display);
     glutKeyboardFunc(keyboardCallback);
+    glutKeyboardUpFunc(keyboardUpCallback);
+    glutSpecialFunc(specialCallback);
+    glutSpecialUpFunc(specialUpCallback);
     glutTimerFunc(50, update, 0);
     glutMainLoop();
 }

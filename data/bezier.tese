@@ -11,11 +11,8 @@ layout(std140) uniform SceneInputData {
     float ambientLight;
 };
 
-vec4 bezierTangent(vec4 p1, vec4 p2, vec4 p3, vec4 p4, float t) {
-    return normalize(p1 * (-1 + 2 * t - t * t) +
-        p2 * (1 - 4 * t + 3 * t * t) +
-        p3 * (2 * t - 3 * t * t) +
-        p4 * (t * t));
+vec3 bezierTangent(vec3 p1, vec3 p2, vec3 p3, vec3 p4, float t) {
+    return normalize(3 * (1 - t) * (1 - t) * (p2 - p1) + 6 * (1 - t) * t * (p3 - p2) + 3 * t * t * (p4 - p3));
 }
 
 void main() {
@@ -44,9 +41,9 @@ void main() {
     vec4 q3 = Au * gl_in[2].gl_Position + Bu * gl_in[6].gl_Position + Cu * gl_in[10].gl_Position + Du * gl_in[14].gl_Position;
     vec4 q4 = Au * gl_in[3].gl_Position + Bu * gl_in[7].gl_Position + Cu * gl_in[11].gl_Position + Du * gl_in[15].gl_Position;
 
-    vec4 tangentA = bezierTangent(p1, p2, p3, p4, u);
-    vec4 tangentB = bezierTangent(q1, q2, q3, q4, v);
+    vec3 tangentA = bezierTangent(p1.xyz, p2.xyz, p3.xyz, p4.xyz, u);
+    vec3 tangentB = bezierTangent(q1.xyz, q2.xyz, q3.xyz, q4.xyz, v);
 
     gl_Position = projectionView * position;
-    normal = normalize(cross(tangentA.xyz, tangentB.xyz));
+    normal = normalize(cross(tangentA, tangentB));
 }

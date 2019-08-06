@@ -29,6 +29,11 @@ public:
         view = glm::lookAt(cameraPosition, glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
     }
 
+    void translate(const glm::vec3& translation) {
+        cameraPosition += translation;
+        dirty = true;
+    }
+
     bool isDirty() const {
         return dirty;
     }
@@ -46,13 +51,15 @@ public:
     }
 
 private:
-    mutable bool dirty{true};
     glm::vec3 cameraPosition{};
-    glm::mat4 projection{};
-    glm::mat4 view{};
+
+    mutable bool dirty{true};
+    mutable glm::mat4 projection{};
+    mutable glm::mat4 view{};
     mutable glm::mat4 projectionView{};
 
     void recreate() const {
+        view = glm::lookAt(cameraPosition, glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
         projectionView = projection * view;
         dirty = false;
     }
@@ -113,13 +120,9 @@ public:
         return sceneUniformBuffer;
     }
 
-    void update() {
-        int timeSinceStart = glutGet(GLUT_ELAPSED_TIME);
-        int deltaTime = timeSinceStart - oldTimeSinceStart;
-        oldTimeSinceStart = timeSinceStart;
-
+    void update(float delta) {
         for (const auto& model : models) {
-            model->update(deltaTime * 0.001f);
+            model->update(delta);
         }
     }
 
@@ -140,5 +143,4 @@ private:
     std::unique_ptr<Camera> camera;
     SceneInputData sceneUniformData{};
     GLuint sceneUniformBuffer{};
-    int oldTimeSinceStart{};
 };
