@@ -56,6 +56,7 @@ public:
         glUseProgram(shader->program);
         glDrawArrays(GL_LINES, 0, TOTAL_VERTICES);
     }
+
 private:
     static constexpr auto GRID_SIZE = 50;
     static constexpr auto TOTAL_VERTICES = (GRID_SIZE * 4 + 2) * 2;
@@ -192,21 +193,6 @@ GLAPIENTRY void debugCallback(GLenum source,
             message);
 }
 
-void initialise() {
-    scene = std::make_unique<Scene>();
-    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
-    model->setScale(2);
-//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
-//    model->setScale(0.5);
-    scene->addModel(std::move(model));
-    scene->addModel(std::make_unique<Floor>(*scene));
-
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_MULTISAMPLE);
-
-    glClearColor(1, 1, 1, 1);
-}
-
 void keyboardCallback(unsigned char key, int, int) {
     if (key == 'w') {
         wireframeMode = !wireframeMode;
@@ -233,6 +219,21 @@ void specialUpCallback(int key, int, int) {
     if (key >= 0 && key <= GLUT_KEY_INSERT) {
         specialKeyState[key] = false;
     }
+}
+
+void initialise() {
+    scene = std::make_unique<Scene>();
+    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
+    model->setScale(2);
+//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
+//    model->setScale(0.5);
+    scene->addModel(std::move(model));
+    scene->addModel(std::make_unique<Floor>(*scene));
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);
+
+    glClearColor(1, 1, 1, 1);
 }
 
 void update(int) {

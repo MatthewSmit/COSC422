@@ -1,7 +1,8 @@
 #version 450 core
 
 layout(location = 0) in vec3 normal;
-layout(location = 1) in vec3 colour;
+
+layout(location = 0) out vec4 outColour;
 
 layout(std140) uniform SceneInputData {
     mat4 projectionView;
