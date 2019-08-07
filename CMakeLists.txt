@@ -17,7 +17,7 @@ add_executable(cosc422-assignment-1-mjs351-bezier
         bezier.cpp)
 
 add_executable(cosc422-assignment-1-mjs351-terrain
-        model.h shader.h util.h
+        model.h shader.h texture.h util.h
 
         terrain.cpp)
 
