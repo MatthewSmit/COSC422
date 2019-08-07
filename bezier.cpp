@@ -223,10 +223,10 @@ void specialUpCallback(int key, int, int) {
 
 void initialise() {
     scene = std::make_unique<Scene>();
-    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
-    model->setScale(2);
-//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
-//    model->setScale(0.5);
+//    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Teapot.txt");
+//    model->setScale(2);
+    auto model = std::make_unique<BezierModel>(*scene, "data/PatchVerts_Gumbo.txt");
+    model->setScale(0.5);
     scene->addModel(std::move(model));
     scene->addModel(std::make_unique<Floor>(*scene));
 

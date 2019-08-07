@@ -32,7 +32,7 @@ GLuint loadShader(int shaderType, const std::string& shaderFile) {
     if (!status || infoLogLength > 0) {
         auto infoLog = std::unique_ptr<GLchar[]>{new GLchar[infoLogLength + 1]};
         glGetShaderInfoLog(shader, infoLogLength, nullptr, infoLog.get());
-        fprintf(stderr, "Shader compile failure: %s\n", infoLog.get());
+        fprintf(stderr, "Shader compile failure for %s: %s\n", shaderFile.c_str(), infoLog.get());
     }
 
     if (!status) {
