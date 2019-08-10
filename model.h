@@ -26,11 +26,16 @@ public:
     Camera() {
         projection = glm::perspectiveFov(60.0f * DEGREE_TO_RADIAN, 800.0f, 600.0f, 1.0f, 1000.0f);
         cameraPosition = glm::vec3(0.0, 15.0, 20.0);
-        view = glm::lookAt(cameraPosition, glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
+        view = glm::lookAt(cameraPosition, target, glm::vec3(0.0, 1.0, 0.0));
     }
 
     void translate(const glm::vec3& translation) {
         cameraPosition += translation;
+        dirty = true;
+    }
+
+    void lookAt(const glm::vec3& newTarget) {
+        target = newTarget;
         dirty = true;
     }
 
@@ -52,6 +57,7 @@ public:
 
 private:
     glm::vec3 cameraPosition{};
+    glm::vec3 target{};
 
     mutable bool dirty{true};
     mutable glm::mat4 projection{};
@@ -59,7 +65,7 @@ private:
     mutable glm::mat4 projectionView{};
 
     void recreate() const {
-        view = glm::lookAt(cameraPosition, glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
+        view = glm::lookAt(cameraPosition, target, glm::vec3(0.0, 1.0, 0.0));
         projectionView = projection * view;
         dirty = false;
     }
@@ -136,6 +142,10 @@ public:
         for (const auto& model : models) {
             model->render(*this);
         }
+    }
+
+    Model* getModel(int index) {
+        return models[index].get();
     }
 
 private:
