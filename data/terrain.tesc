@@ -4,7 +4,6 @@ layout(location = 0) in vec2 terrainLookup[];
 
 layout(vertices = 4) out;
 layout(location = 0) out vec2 outTerrainLookup[];
-layout(location = 1) out int tessLevelInner[];
 
 layout(std140) uniform SceneInputData {
     mat4 projectionView;
@@ -26,9 +25,9 @@ int calculateTesselation(vec3 position) {
 }
 
 void main() {
-    int level = calculateTesselation((gl_in[0].gl_Position.xyz + gl_in[1].gl_Position.xyz + gl_in[2].gl_Position.xyz + gl_in[3].gl_Position.xyz) / 4);
-
     if (gl_InvocationID == 0) {
+        int level = calculateTesselation((gl_in[0].gl_Position.xyz + gl_in[1].gl_Position.xyz + gl_in[2].gl_Position.xyz + gl_in[3].gl_Position.xyz) / 4);
+
         gl_TessLevelInner[0] = level;
         gl_TessLevelInner[1] = level;
         gl_TessLevelOuter[0] = calculateTesselation((gl_in[0].gl_Position.xyz + gl_in[1].gl_Position.xyz) / 2);
@@ -37,7 +36,6 @@ void main() {
         gl_TessLevelOuter[3] = calculateTesselation((gl_in[1].gl_Position.xyz + gl_in[2].gl_Position.xyz) / 2);
     }
 
-    tessLevelInner[gl_InvocationID] = level;
     outTerrainLookup[gl_InvocationID] = terrainLookup[gl_InvocationID];
     gl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;
 }

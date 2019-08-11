@@ -3,7 +3,6 @@
 layout(quads, equal_spacing, ccw) in;
 
 layout(location = 0) in vec2 outTerrainLookup[];
-layout(location = 1) in int tessLevelInner[];
 
 layout(location = 1) out vec2 texCoord;
 
