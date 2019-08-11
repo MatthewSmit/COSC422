@@ -21,9 +21,15 @@ public:
         shader = std::make_unique<Shader>("data/terrain.vert",
                 "data/terrain.tesc",
                 "data/terrain.tese",
+                "data/terrain.geom",
                 "data/terrain.frag");
 
-        texture = std::make_unique<Texture>("data/HeightMap1.tga");
+        heightMap1 = std::make_unique<Texture>("data/HeightMap1.tga");
+        heightMap2 = std::make_unique<Texture>("data/HeightMap2.png");
+
+        waterTexture = std::make_unique<Texture>("data/Water.png");
+        grassTexture = std::make_unique<Texture>("data/Grass.jpg");
+        snowTexture = std::make_unique<Texture>("data/Snow.jpg");
 
         // Create a grid of vertices from -SIZE to SIZE in both x and z
         glm::vec4 VERTEX_DATA[TOTAL_VERTICES]{};
@@ -66,11 +72,44 @@ public:
         GLuint sceneInputDataIndex = glGetUniformBlockIndex(shader->program, "SceneInputData");
         glUniformBlockBinding(shader->program, sceneInputDataIndex, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, scene.getSceneUniformBuffer());
-
-        textureSlot = glGetUniformLocation(shader->program, "heightmap");
     }
 
     ~Terrain() override = default;
+
+    void updateKeyboard(unsigned char key) {
+        if (key == '1') {
+            heightMap = 0;
+        }
+        else if (key == '2') {
+            heightMap = 1;
+        }
+
+        if (key == 'v') {
+            waterHeight -= 0.1;
+            if (waterHeight < 0) {
+                waterHeight = 0;
+            }
+        }
+        if (key == 'b') {
+            waterHeight += 0.1;
+            if (waterHeight > 7) {
+                waterHeight = 7;
+            }
+        }
+
+        if (key == 'n') {
+            snowHeight -= 0.1;
+            if (snowHeight < 5) {
+                snowHeight = 5;
+            }
+        }
+        if (key == 'm') {
+            snowHeight += 0.1;
+            if (snowHeight > 10) {
+                snowHeight = 10;
+            }
+        }
+    }
 
     void update(float) override {
     }
@@ -79,7 +118,16 @@ public:
         glPatchParameteri(GL_PATCH_VERTICES, 4);
         glBindVertexArray(vertexArray);
         glUseProgram(shader->program);
-        texture->bind(textureSlot);
+        if (heightMap == 0) {
+            heightMap1->bind(0);
+        } else {
+            heightMap2->bind(0);
+        }
+        grassTexture->bind(1);
+        snowTexture->bind(2);
+        waterTexture->bind(3);
+        glUniform1f(glGetUniformLocation(shader->program, "waterHeight"), waterHeight);
+        glUniform1f(glGetUniformLocation(shader->program, "snowHeight"), snowHeight);
         glDrawElements(GL_PATCHES, TOTAL_INDICES, GL_UNSIGNED_INT, nullptr);
     }
 
@@ -89,8 +137,14 @@ private:
     static constexpr auto TOTAL_INDICES = GRID_SIZE * GRID_SIZE * 4;
     static constexpr auto TOTAL_VERTICES = (GRID_SIZE + 1) * (GRID_SIZE + 1);
 
-    std::unique_ptr<Texture> texture{};
-    GLint textureSlot{};
+    std::unique_ptr<Texture> heightMap1{};
+    std::unique_ptr<Texture> heightMap2{};
+    std::unique_ptr<Texture> waterTexture{};
+    std::unique_ptr<Texture> grassTexture{};
+    std::unique_ptr<Texture> snowTexture{};
+    float waterHeight{2};
+    float snowHeight{7};
+    int heightMap{0};
 };
 
 GLAPIENTRY void debugCallback(GLenum source,
@@ -140,6 +194,8 @@ void keyboardCallback(unsigned char key, int, int) {
     if (key == 'w') {
         wireframeMode = !wireframeMode;
     }
+
+    ((Terrain*)scene->getModel(0))->updateKeyboard(key);
 
     keyState[key] = true;
 }
@@ -191,6 +247,13 @@ void update(int) {
     }
     if (specialKeyState[GLUT_KEY_RIGHT]) {
         camera.translate(glm::vec3{10 * delta, 0, 0});
+    }
+
+    if (keyState['+'] || keyState['=']) {
+        camera.translate(glm::vec3{0, 10 * delta, 0});
+    }
+    if (keyState['-']) {
+        camera.translate(glm::vec3{0, -10 * delta, 0});
     }
 
     camera.lookAt(camera.getCameraPosition() - glm::vec3(0.0, 15.0, 20.0));

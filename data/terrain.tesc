@@ -1,7 +1,8 @@
 #version 450 core
 
-layout(vertices = 4) out;
 layout(location = 0) in vec2 terrainLookup[];
+
+layout(vertices = 4) out;
 layout(location = 0) out vec2 outTerrainLookup[];
 
 layout(std140) uniform SceneInputData {
@@ -12,8 +13,8 @@ layout(std140) uniform SceneInputData {
 };
 
 int calculateTesselation(vec3 position) {
-    const float D_MIN = 10;
-    const float D_MAX = 100;
+    const float D_MIN = 25;
+    const float D_MAX = 125;
 
     const int L_LOW = 20;
     const int L_HIGH = 2;
@@ -26,6 +27,7 @@ int calculateTesselation(vec3 position) {
 void main() {
     if (gl_InvocationID == 0) {
         int level = calculateTesselation((gl_in[0].gl_Position.xyz + gl_in[1].gl_Position.xyz + gl_in[2].gl_Position.xyz + gl_in[3].gl_Position.xyz) / 4);
+
         gl_TessLevelInner[0] = level;
         gl_TessLevelInner[1] = level;
         gl_TessLevelOuter[0] = calculateTesselation((gl_in[0].gl_Position.xyz + gl_in[1].gl_Position.xyz) / 2);

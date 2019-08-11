@@ -144,6 +144,10 @@ public:
         }
     }
 
+    Model* getModel(int index) {
+        return models[index].get();
+    }
+
 private:
     std::vector<std::unique_ptr<Model>> models{};
     std::unique_ptr<Camera> camera;
