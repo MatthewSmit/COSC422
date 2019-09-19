@@ -159,7 +159,11 @@ void render (const aiScene* sc, const aiNode* nd)
         else
             glColor4fv(materialCol);   //Default material colour
 
-
+        if (mesh->HasTextureCoords(0))
+        {
+            glBindTexture(GL_TEXTURE_2D, texIdMap[materialIndex]);
+        }
+        
         //Get the polygons from each mesh and draw them
         for (int k = 0; k < mesh->mNumFaces; k++)
         {
@@ -179,7 +183,11 @@ void render (const aiScene* sc, const aiNode* nd)
             for(int i = 0; i < face->mNumIndices; i++) {
                 int vertexIndex = face->mIndices[i];
 
-                if(mesh->HasVertexColors(0))
+                if (mesh->HasTextureCoords(0))
+                {
+                    glTexCoord2f(mesh->mTextureCoords[0][vertexIndex].x, mesh->mTextureCoords[0][vertexIndex].y);
+                }
+                else if(mesh->HasVertexColors(0))
                     glColor4fv((GLfloat*)&mesh->mColors[0][vertexIndex]);
 
                 //Assign texture coordinates here
