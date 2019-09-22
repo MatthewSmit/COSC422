@@ -56,16 +56,16 @@ void printSceneInfo(const aiScene* scene)
 {
 	if(scene != NULL)
 	{
-		cout << "======================= Scene Data ========================" << endl;
-		cout << "Number of animations = " << scene->mNumAnimations << endl;
-		cout << "Number of cameras = " << scene->mNumCameras << endl;
-		cout << "Number of lights = " << scene->mNumLights << endl;
-		cout << "Number of materials = " << scene->mNumMaterials << endl;
-		cout << "Number of meshes = " << scene->mNumMeshes << endl;
-		cout << "Number of textures = " << scene->mNumTextures << endl;
+		std::cout << "======================= Scene Data ========================" << std::endl;
+		std::cout << "Number of animations = " << scene->mNumAnimations << std::endl;
+		std::cout << "Number of cameras = " << scene->mNumCameras << std::endl;
+		std::cout << "Number of lights = " << scene->mNumLights << std::endl;
+		std::cout << "Number of materials = " << scene->mNumMaterials << std::endl;
+		std::cout << "Number of meshes = " << scene->mNumMeshes << std::endl;
+		std::cout << "Number of textures = " << scene->mNumTextures << std::endl;
 	}
 	else
-		cout << "*********** ERROR: Empty scene ****************" << endl;
+		std::cout << "*********** ERROR: Empty scene ****************" << std::endl;
 }
 
 // ----------------------------------------------------------------------------
@@ -75,30 +75,30 @@ void printMeshInfo(const aiScene* scene)
 	int matIndx;
 	aiMaterial* mtl;
 	aiColor4D diffuse;
-	cout << "======================= Mesh Data =============================" << endl;
-	cout << "Number of meshes = " << numMesh << endl;
+	std::cout << "======================= Mesh Data =============================" << std::endl;
+	std::cout << "Number of meshes = " << numMesh << std::endl;
 	
 	for (int n = 0; n < numMesh; ++n)
 	{
 		aiMesh* mesh = scene->mMeshes[n];
 		matIndx = mesh->mMaterialIndex;
-		cout << "Mesh index " << n << ": nverts = " << mesh->mNumVertices << "  nfaces =  " <<
-			mesh->mNumFaces << "  nbones = " << mesh->mNumBones << "  Material index = " << matIndx << endl;
+		std::cout << "Mesh index " << n << ": nverts = " << mesh->mNumVertices << "  nfaces =  " <<
+			mesh->mNumFaces << "  nbones = " << mesh->mNumBones << "  Material index = " << matIndx << std::endl;
 		mtl = scene->mMaterials[matIndx];
 		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))  //Get material colour if available
-			cout << "         Material colour: " << diffuse.r << "  " << diffuse.g << "  " << diffuse.b << endl;
+			std::cout << "         Material colour: " << diffuse.r << "  " << diffuse.g << "  " << diffuse.b << std::endl;
 		if (mesh->HasTextureCoords(0))
-			cout << "Mesh has texture coordinates." << endl;
+			std::cout << "Mesh has texture coordinates." << std::endl;
 		else
-			cout << "Mesh does not have texture coordinates."<<endl;
+			std::cout << "Mesh does not have texture coordinates."<<std::endl;
 		if (mesh->HasVertexColors(0))
-			cout << "Mesh has vertex colors." << endl;
+			std::cout << "Mesh has vertex colors." << std::endl;
 		else
-			cout << "Mesh does not have vertex colors." << endl;
+			std::cout << "Mesh does not have vertex colors." << std::endl;
 		if (mesh->HasNormals())
-			cout << "Mesh has vertex normals." << endl;
+			std::cout << "Mesh has vertex normals." << std::endl;
 		else
-			cout << "Mesh does not have vertex normals." << endl;
+			std::cout << "Mesh does not have vertex normals." << std::endl;
 	}
 
 }
@@ -111,19 +111,19 @@ void printTreeInfo(const aiNode* node)
 	float* mat = new float[16];
 	if (node->mParent != NULL) parentName = (node->mParent->mName).C_Str();
 	else parentName = "NO PARENT";
-	cout << "==================== Node Data ===========================" << endl;
-	cout << "Node Name: " << (node->mName).C_Str() << "  Parent: " << parentName <<
-		"  nchild = " << node->mNumChildren << "  nmesh = " << numMesh << endl;
+	std::cout << "==================== Node Data ===========================" << std::endl;
+	std::cout << "Node Name: " << (node->mName).C_Str() << "  Parent: " << parentName <<
+		"  nchild = " << node->mNumChildren << "  nmesh = " << numMesh << std::endl;
 	if (numMesh > 0)
 	{
-		cout << "Mesh indices: ";
-		for (int n = 0; n < numMesh; n++) cout << node->mMeshes[n] << " ";
-		cout << endl;
+		std::cout << "Mesh indices: ";
+		for (int n = 0; n < numMesh; n++) std::cout << node->mMeshes[n] << " ";
+		std::cout << std::endl;
 	}
-	cout << "Transformation:  " ;
+	std::cout << "Transformation:  " ;
 	mat = (float *)&(node->mTransformation.a1);
-	for (int n = 0; n < 16; ++n) cout << mat[n] << " " ;
-	cout << endl;
+	for (int n = 0; n < 16; ++n) std::cout << mat[n] << " " ;
+	std::cout << std::endl;
 
 	for (int n = 0; n < node->mNumChildren; n++)
 		printTreeInfo(node->mChildren[n]);
@@ -133,7 +133,7 @@ void printTreeInfo(const aiNode* node)
 void printBoneInfo(const aiScene* scene)
 {
 		float* mat = new float[16];
-		cout << "==================== Bone Data ===========================" << endl;
+		std::cout << "==================== Bone Data ===========================" << std::endl;
 		int nd = scene->mNumMeshes;
 		for (int n = 0; n < scene->mNumMeshes; ++n)
 		{
@@ -143,14 +143,14 @@ void printBoneInfo(const aiScene* scene)
 				for(int i = 0; i < mesh->mNumBones; i++)
 				{
 					aiBone* bone = mesh->mBones[i];
-					cout << "Bone Name: " << (bone->mName).C_Str() << "   Mesh: " << n << "  nweights = " 
-						<< bone->mNumWeights << endl;
+					std::cout << "Bone Name: " << (bone->mName).C_Str() << "   Mesh: " << n << "  nweights = " 
+						<< bone->mNumWeights << std::endl;
 					mat = &(bone->mOffsetMatrix.a1);
-					cout << "     Offset matrix: ";
-					for (int k = 0; k < 16; k++) cout << mat[k] << " " ;
-					cout << endl;
-					cout << "      Vertex ids: " << (bone->mWeights[0]).mVertexId << "  " 
-						<< (bone->mWeights[bone->mNumWeights-1]).mVertexId << endl;
+					std::cout << "     Offset matrix: ";
+					for (int k = 0; k < 16; k++) std::cout << mat[k] << " " ;
+					std::cout << std::endl;
+					std::cout << "      Vertex ids: " << (bone->mWeights[0]).mVertexId << "  " 
+						<< (bone->mWeights[bone->mNumWeights-1]).mVertexId << std::endl;
 				}
 			}
 		}
@@ -163,32 +163,32 @@ void printAnimInfo(const aiScene* scene)
 	float* quat = new float[4];
 	if(scene != NULL)
 	{
-		cout << "==================== Animation Data ===========================" << endl;
-		cout << "Number of animations = " << scene->mNumAnimations << endl;
+		std::cout << "==================== Animation Data ===========================" << std::endl;
+		std::cout << "Number of animations = " << scene->mNumAnimations << std::endl;
 
 		for (int n = 0; n < scene->mNumAnimations; ++n)
 		{
 			aiAnimation* anim = scene->mAnimations[n];
-			cout << " --- Anim " << n << ":  Name = " << (anim->mName).C_Str() << 
+			std::cout << " --- Anim " << n << ":  Name = " << (anim->mName).C_Str() << 
 				"  nchanls = " << anim->mNumChannels << " nticks = " << anim->mTicksPerSecond <<
-				"  duration (ticks) = " << anim->mDuration << endl;
+				"  duration (ticks) = " << anim->mDuration << std::endl;
 			for(int i = 0; i < anim->mNumChannels; i++)
 			{
 				aiNodeAnim* ndAnim = anim->mChannels[i];
-				cout << "     Channel " << i << ": nodeName = " << (ndAnim->mNodeName).C_Str()  << " nposkeys = " << ndAnim->mNumPositionKeys << "  nrotKeys = " <<
-					ndAnim->mNumRotationKeys << " nsclKeys = " << ndAnim->mNumScalingKeys << endl;
+				std::cout << "     Channel " << i << ": nodeName = " << (ndAnim->mNodeName).C_Str()  << " nposkeys = " << ndAnim->mNumPositionKeys << "  nrotKeys = " <<
+					ndAnim->mNumRotationKeys << " nsclKeys = " << ndAnim->mNumScalingKeys << std::endl;
 				for(int k = 0; k < ndAnim->mNumPositionKeys; k++)
 				{
 					aiVectorKey posKey = ndAnim->mPositionKeys[k];    //Note: Does not return a pointer
 					pos = (float*)&posKey.mValue;
-					cout <<  "        posKey " << k << ":  Time = " << posKey.mTime << " Value = " << pos[0] << " " << pos[1] << " " << pos[2] << endl;
+					std::cout <<  "        posKey " << k << ":  Time = " << posKey.mTime << " Value = " << pos[0] << " " << pos[1] << " " << pos[2] << std::endl;
 				}
 				for(int k = 0; k < ndAnim->mNumRotationKeys; k++)
 				{
 					aiQuatKey rotnKey = ndAnim->mRotationKeys[k];    //Note: Does not return a pointer
 					quat = (float*)&rotnKey.mValue;
-					cout <<  "        rotnKey " << k << ":  Time = " << rotnKey.mTime << " Value = " << quat[0] << " " << 
-						quat[1] << " " << quat[2] << " " << quat[3] <<endl;
+					std::cout <<  "        rotnKey " << k << ":  Time = " << rotnKey.mTime << " Value = " << quat[0] << " " << 
+						quat[1] << " " << quat[2] << " " << quat[3] <<std::endl;
 				}
 			}
 		}

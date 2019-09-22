@@ -154,7 +154,7 @@ private:
     }
 };
 
-GLAPIENTRY void debugCallback(GLenum source,
+void GLAPIENTRY debugCallback(GLenum source,
         GLenum type,
         GLuint id,
         GLenum severity,

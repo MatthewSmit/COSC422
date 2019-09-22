@@ -147,7 +147,7 @@ private:
     int heightMap{0};
 };
 
-GLAPIENTRY void debugCallback(GLenum source,
+void GLAPIENTRY debugCallback(GLenum source,
                               GLenum type,
                               GLuint id,
                               GLenum severity,
@@ -178,9 +178,9 @@ GLAPIENTRY void debugCallback(GLenum source,
             "Low"
     };
 
-    if (severity == GL_DEBUG_SEVERITY_HIGH) {
-        __asm("int $3");
-    }
+    // if (severity == GL_DEBUG_SEVERITY_HIGH) {
+    //     __asm("int $3");
+    // }
 
     printf("Source: %s; Type: %s; Id: %d; Severity: %s, Message: %s\n",
            SOURCE[source - GL_DEBUG_SOURCE_API],
