@@ -2,62 +2,25 @@
 //  COSC422: Advanced Computer Graphics;  University of Canterbury (2019)
 //  ========================================================================
 
-#include <iostream>
-#include <map>
-#include <GL/glew.h>
+// TODO: Cache vertex/normals - speedup
+// TODO: Transform normals properly - ask mukandun
+// TODO: SceneMin/Max per frame
+// TODO: Track movement and move floor plane accordingly
+
 #include <GL/freeglut.h>
+
 #include <IL/il.h>
 
 #include <assimp/cimport.h>
-#include <assimp/types.h>
-#include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <assimp/types.h>
+
 #include "assimp_extras.h"
 
+#include <iostream>
 #include <unordered_map>
 #include <vector>
-
-#ifndef NDEBUG
-void GLAPIENTRY debugCallback(GLenum source,
-                              GLenum type,
-                              GLuint id,
-                              GLenum severity,
-                              GLsizei,
-                              const char* message,
-                              const void*)
-{
-	static const char* SOURCE[] = {
-		"API",
-		"Window System",
-		"Shader Compiler",
-		"Thirdy Party",
-		"Application",
-		"Other"
-	};
-
-	static const char* TYPE[] = {
-		"Error",
-		"Deprecated Behaviour",
-		"Undefined Behaviour",
-		"Portability",
-		"Performance",
-		"Other"
-	};
-
-	static const char* SEVERITY[] = {
-		"High",
-		"Medium",
-		"Low"
-	};
-
-	printf("Source: %s; Type: %s; Id: %d; Severity: %s, Message: %s\n",
-	       SOURCE[source - GL_DEBUG_SOURCE_API],
-	       TYPE[type - GL_DEBUG_TYPE_ERROR],
-	       id,
-	       severity == GL_DEBUG_SEVERITY_NOTIFICATION ? "Notification" : SEVERITY[severity - GL_DEBUG_SEVERITY_HIGH],
-	       message);
-}
-#endif
 
 //----------Globals----------------------------
 const aiScene* scene = NULL;
@@ -69,7 +32,7 @@ aiVector3D scene_min;
 aiVector3D scene_max;
 aiVector3D scene_center;
 int modelRotn = 0;
-std::map<int, int> texIdMap;
+std::unordered_map<int, int> texIdMap;
 GLuint floorTexture;
 bool keyState[256] = {};
 bool specialKeyState[GLUT_KEY_INSERT + 1] = {};
@@ -81,14 +44,23 @@ float lightPosn[4] = {2, 10, 5, 0}; //Default light's position
 bool twoSidedLight = false; //Change to 'true' to enable two-sided lighting
 
 int tDuration; //Animation duration in ticks.
-int currTick = 1; //current tick
+int currTick = 0; //current tick
 int timeStep = 50; //Animation time step = 50 m.sec
 
 bool dwarfSpecial = false;
 int currentSceneId = 0;
 const int maxSceneId = 3;
 
-std::unordered_map<std::string, std::vector<aiMatrix4x4>> animationMatrices;
+struct BoneInfo
+{
+	aiMatrix4x4 offsetMatrix;
+	std::vector<aiMatrix4x4> matrix;
+	int parentIndex;
+};
+
+std::vector<BoneInfo> bones{};
+std::vector<std::vector<aiMatrix4x4>> animationMatrices{};
+std::vector<std::vector<std::vector<std::pair<float, int>>>> vertexWeights{};
 
 //-------------Loads texture files using DevIL library-------------------------------
 void loadGLTextures(const std::string& path, const aiScene* scene)
@@ -182,9 +154,9 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 
 	auto flags = aiProcessPreset_TargetRealtime_MaxQuality;
 	if (fileName.compare(fileName.size() - 4, 4, ".bvh") == 0)
-    {
-	    flags |= aiProcess_Debone;
-    }
+	{
+		flags |= aiProcess_Debone;
+	}
 	scene = aiImportFile(fileName.c_str(), flags);
 	if (scene == nullptr)
 	{
@@ -213,7 +185,7 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 
 	if (animationScene)
 	{
-		if (scene->mAnimations)
+		if (animationScene->mAnimations)
 		{
 			tDuration = animationScene->mAnimations[0]->mDuration;
 		}
@@ -236,23 +208,51 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 	return true;
 }
 
-// ------A recursive function to traverse scene graph and render each mesh----------
-void render(const aiScene* sc, const aiNode* nd, bool shadow)
+aiMatrix4x4 FindMatrix(std::unordered_map<std::string, int>& boneMapping, aiNode* node, int tick)
 {
-	auto m = nd->mTransformation;
-
-	aiColor4D diffuse;
-
-	aiTransposeMatrix4(&m); //Convert to column-major order
-	glPushMatrix();
-	glMultMatrixf(reinterpret_cast<float*>(&m)); //Multiply by the transformation matrix for this node
-
-	// Draw all meshes assigned to this node
-	for (auto n = 0; n < nd->mNumMeshes; n++)
+	const auto mapping = boneMapping.find(node->mName.C_Str());
+	aiMatrix4x4 transformation;
+	if (mapping == boneMapping.end())
 	{
-		const int meshIndex = nd->mMeshes[n]; //Get the mesh indices from the current node
-		auto mesh = scene->mMeshes[meshIndex]; //Using mesh index, get the mesh object
+		transformation = node->mTransformation;
+	}
+	else
+	{
+		transformation = animationMatrices[mapping->second][tick];
+	}
+	
+	if (node->mParent == NULL)
+	{
+		return transformation;
+	}
 
+	return FindMatrix(boneMapping, node->mParent, tick) * transformation;
+}
+
+aiVector3D TransformVertex(const aiVector3D& point, const std::vector<std::pair<float, int>>& vertexWeights)
+{
+	return bones[vertexWeights[0].second].matrix[currTick] * point;
+}
+
+// ------A recursive function to traverse scene graph and render each mesh----------
+void render(const aiScene* sc, bool shadow)
+{
+	for (auto j = 0u; j < sc->mNumMeshes; j++)
+	{
+		const auto& meshWeights = vertexWeights[j];
+		// auto m = nd->mTransformation;
+		//
+		// aiTransposeMatrix4(&m); //Convert to column-major order
+		// glPushMatrix();
+		// glMultMatrixf(reinterpret_cast<float*>(&m)); //Multiply by the transformation matrix for this node
+		//
+		// // Draw all meshes assigned to this node
+		// for (auto n = 0; n < nd->mNumMeshes; n++)
+		// {
+		// 	const int meshIndex = nd->mMeshes[n]; //Get the mesh indices from the current node
+		// 	auto mesh = scene->mMeshes[meshIndex]; //Using mesh index, get the mesh object
+		auto mesh = scene->mMeshes[j];
+		
 		if (mesh->HasTextureCoords(0) && !shadow)
 		{
 			glEnable(GL_TEXTURE_2D);
@@ -261,27 +261,35 @@ void render(const aiScene* sc, const aiNode* nd, bool shadow)
 		{
 			glDisable(GL_TEXTURE_2D);
 		}
-		
+
+		aiColor4D diffuse;
 		int materialIndex = mesh->mMaterialIndex; //Get material index attached to the mesh
 		auto mtl = sc->mMaterials[materialIndex];
 		if (shadow)
-			glColor4fv(shadowColour);   //User-defined colour
-		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))  //Get material colour from model
+		{
+			glColor4fv(shadowColour); //User-defined colour
+		}
+		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))
+		{
+			//Get material colour from model
 			glColor4f(diffuse.r, diffuse.g, diffuse.b, 1.0);
+		}
 		else
-			glColor4fv(materialCol);   //Default material colour
-
+		{
+			glColor4fv(materialCol); //Default material colour
+		}
+		
 		if (mesh->HasTextureCoords(0) && !shadow)
 		{
 			glBindTexture(GL_TEXTURE_2D, texIdMap[materialIndex]);
 		}
-        
+
 		//Get the polygons from each mesh and draw them
-		for (auto k = 0; k < mesh->mNumFaces; k++)
+		for (auto k = 0u; k < mesh->mNumFaces; k++)
 		{
 			const auto face = &mesh->mFaces[k];
 			GLenum face_mode;
-
+			
 			switch (face->mNumIndices)
 			{
 			case 1: face_mode = GL_POINTS;
@@ -293,13 +301,14 @@ void render(const aiScene* sc, const aiNode* nd, bool shadow)
 			default: face_mode = GL_POLYGON;
 				break;
 			}
-
+			
 			glBegin(face_mode);
-
-			for (auto i = 0; i < face->mNumIndices; i++)
+			
+			for (auto i = 0u; i < face->mNumIndices; i++)
 			{
 				const int vertexIndex = face->mIndices[i];
-
+				const auto& vertexWeight = meshWeights[vertexIndex];
+				
 				if (shadow)
 				{
 				}
@@ -307,122 +316,243 @@ void render(const aiScene* sc, const aiNode* nd, bool shadow)
 				{
 					glTexCoord2f(mesh->mTextureCoords[0][vertexIndex].x, mesh->mTextureCoords[0][vertexIndex].y);
 				}
-				else if(mesh->HasVertexColors(0))
+				else if (mesh->HasVertexColors(0))
+				{
 					glColor4fv(reinterpret_cast<GLfloat*>(&mesh->mColors[0][vertexIndex]));
-
-				//Assign texture coordinates here
-
+				}
+				
 				if (mesh->HasNormals())
-					glNormal3fv(&mesh->mNormals[vertexIndex].x);
+				{
+					auto normal = TransformVertex(mesh->mNormals[vertexIndex], vertexWeight);
+					glNormal3fv(&normal.x);
+				}
+				
+				auto vertex = TransformVertex(mesh->mVertices[vertexIndex], vertexWeight);
+				glVertex3fv(&vertex.x);
+			}
+			
+			glEnd();
+			// 	}
+		}
+		
+		// // Draw all children
+		// for (auto i = 0u; i < nd->mNumChildren; i++)
+		// {
+		// 	render(sc, nd->mChildren[i], shadow);
+		// }
+		//
+		// glPopMatrix();
+	}
+}
 
-				glVertex3fv(&mesh->mVertices[vertexIndex].x);
+aiMatrix4x4 GetKeyframe(aiNodeAnim* pAnim, int j)
+{
+	aiVector3D position;
+	auto foundPosition = false;
+	if (pAnim->mNumPositionKeys == 1)
+	{
+		position = pAnim->mPositionKeys[0].mValue;
+		foundPosition = true;
+	}
+	else
+	{
+		for (auto i = 0u; i < pAnim->mNumPositionKeys; i++)
+		{
+			if (pAnim->mPositionKeys[i].mTime == j)
+			{
+				position = pAnim->mPositionKeys[i].mValue;
+				foundPosition = true;
+				break;
 			}
 
-			glEnd();
+			if (i > 0 && pAnim->mPositionKeys[i - 1].mTime < j && pAnim->mPositionKeys[i].mTime >= j)
+			{
+				const auto previous = pAnim->mPositionKeys[i - 1].mValue;
+				const auto current = pAnim->mPositionKeys[i].mValue;
+				const auto delta = (j - pAnim->mPositionKeys[i - 1].mTime) / (pAnim->mPositionKeys[i].mTime - pAnim->mPositionKeys[i - 1].mTime);
+				position = (current - previous).SymMul(aiVector3D(delta)) + previous;
+				foundPosition = true;
+				break;
+			}
 		}
 	}
 
-	// Draw all children
-	for (int i = 0; i < nd->mNumChildren; i++)
-		render(sc, nd->mChildren[i], shadow);
+	if (!foundPosition)
+	{
+		__debugbreak();
+		throw std::exception{};
+	}
 
-	glPopMatrix();
+	aiQuaternion rotation;
+	auto foundRotation = false;
+	if (pAnim->mNumRotationKeys == 1)
+	{
+		rotation = pAnim->mRotationKeys[0].mValue;
+		foundRotation = true;
+	}
+	else
+	{
+		for (auto i = 0u; i < pAnim->mNumRotationKeys; i++)
+		{
+			if (pAnim->mRotationKeys[i].mTime == j)
+			{
+				rotation = pAnim->mRotationKeys[i].mValue;
+				foundRotation = true;
+				break;
+			}
+
+			if (i > 0 && pAnim->mRotationKeys[i - 1].mTime < j && pAnim->mRotationKeys[i].mTime >= j)
+			{
+				const auto previous = pAnim->mRotationKeys[i - 1].mValue;
+				const auto current = pAnim->mRotationKeys[i].mValue;
+				const auto delta = (j - pAnim->mRotationKeys[i - 1].mTime) / (pAnim->mRotationKeys[i].mTime - pAnim->mRotationKeys[i - 1].mTime);
+				aiQuaternion::Interpolate(rotation, previous, current, delta);
+				foundRotation = true;
+				break;
+			}
+		}
+	}
+
+	if (!foundRotation)
+	{
+		__debugbreak();
+		throw std::exception{};
+	}
+
+	// TODO: Scale?
+
+	aiMatrix4x4 positionMatrix;
+	aiMatrix4x4::Translation(position, positionMatrix);
+
+	const auto rotationMatrix = aiMatrix4x4(rotation.GetMatrix());
+
+	return positionMatrix * rotationMatrix;
 }
 
-aiMatrix4x4 GetKeyframe(aiNodeAnim *pAnim, int j) {
-    aiVector3D position;
-    auto foundPosition = false;
-    if (pAnim->mNumPositionKeys == 1) {
-        position = pAnim->mPositionKeys[0].mValue;
-        foundPosition = true;
-    } else {
-        for (auto i = 0u; i < pAnim->mNumPositionKeys; i++) {
-            if (pAnim->mPositionKeys[i].mTime == j) {
-                position = pAnim->mPositionKeys[i].mValue;
-                foundPosition = true;
-                break;
-            } else if (i > 0 && pAnim->mPositionKeys[i - 1].mTime < j && pAnim->mPositionKeys[i].mTime >= j) {
-                auto previous = pAnim->mPositionKeys[i - 1].mValue;
-                auto current = pAnim->mPositionKeys[i].mValue;
-                auto delta = (j - pAnim->mPositionKeys[i - 1].mTime) / (pAnim->mPositionKeys[i].mTime - pAnim->mPositionKeys[i - 1].mTime);
-                position = (current - previous).SymMul(aiVector3D(delta)) + previous;
-                foundPosition = true;
-                break;
-            }
-        }
-    }
+void FindBones(const aiNode* node, std::unordered_map<std::string, int>& boneMapping)
+{
+	if (boneMapping.find(node->mName.C_Str()) == boneMapping.end())
+	{
+		boneMapping.insert(std::make_pair(node->mName.C_Str(), bones.size()));
+		bones.push_back({aiMatrix4x4(), {}, -1});
+	}
+	
+	for (auto i = 0u; i < node->mNumChildren; i++)
+	{
+		FindBones(node->mChildren[i], boneMapping);
+	}
+}
 
-    if (!foundPosition) {
-        asm("int3");
-        throw std::exception{};
-    }
+void FindBones(const aiScene* scene, std::unordered_map<std::string, int>& boneMapping)
+{
+	for (auto i = 0u; i < scene->mNumMeshes; i++)
+	{
+		for (auto j = 0u; j < scene->mMeshes[i]->mNumBones; j++)
+		{
+			const auto& bone = scene->mMeshes[i]->mBones[j];
+			if (boneMapping.find(bone->mName.C_Str()) == boneMapping.end())
+			{
+				boneMapping.insert(std::make_pair(bone->mName.C_Str(), bones.size()));
+				bones.push_back({bone->mOffsetMatrix, {}, -1});
+			}
+		}
+	}
 
-    aiQuaternion rotation;
-    auto foundRotation = false;
-    if (pAnim->mNumRotationKeys == 1) {
-        rotation = pAnim->mRotationKeys[0].mValue;
-        foundRotation = true;
-    } else {
-        for (auto i = 0u; i < pAnim->mNumRotationKeys; i++) {
-            if (pAnim->mRotationKeys[i].mTime == j) {
-                rotation = pAnim->mRotationKeys[i].mValue;
-                foundRotation = true;
-                break;
-            } else if (i > 0 && pAnim->mRotationKeys[i - 1].mTime < j && pAnim->mRotationKeys[i].mTime >= j) {
-                auto previous = pAnim->mRotationKeys[i - 1].mValue;
-                auto current = pAnim->mRotationKeys[i].mValue;
-                auto delta = (j - pAnim->mRotationKeys[i - 1].mTime) / (pAnim->mRotationKeys[i].mTime - pAnim->mRotationKeys[i - 1].mTime);
-                aiQuaternion::Interpolate(rotation, previous, current, delta);
-                foundRotation = true;
-                break;
-            }
-        }
-    }
+	FindBones(scene->mRootNode, boneMapping);
 
-    if (!foundRotation) {
-        asm("int3");
-        throw std::exception{};
-    }
-
-    // TODO: Scale?
-
-    aiMatrix4x4 positionMatrix;
-    aiMatrix4x4::Translation(position, positionMatrix);
-
-    aiMatrix4x4 rotationMatrix = aiMatrix4x4(rotation.GetMatrix());
-
-    return positionMatrix * rotationMatrix;
+	for (const auto& mapping : boneMapping)
+	{
+		const auto node = scene->mRootNode->FindNode(mapping.first.data());
+		auto parent = node->mParent;
+		while (parent)
+		{
+			auto parentIndex = boneMapping.find(parent->mName.C_Str());
+			if (parentIndex == boneMapping.end())
+			{
+				parent = parent->mParent;
+			}
+			else
+			{
+				bones[mapping.second].parentIndex = parentIndex->second;
+				break;
+			}
+		}
+	}
 }
 
 void UpdateAnimationMatrices()
 {
-    animationMatrices.clear();
+	bones.clear();
+	animationMatrices.clear();
+	vertexWeights.clear();
 
-    auto sourceScene = animationScene ? animationScene : scene;
+	const auto sourceScene = animationScene ? animationScene : scene;
 
-    if (!sourceScene->mAnimations)
-    {
-        throw std::exception{};
-    }
+	if (!sourceScene->mAnimations)
+	{
+		throw std::exception{};
+	}
 
-    const auto anim = sourceScene->mAnimations[0];
+	const auto anim = sourceScene->mAnimations[0];
 
-    if (round(anim->mDuration) != anim->mDuration)
-    {
-        throw std::exception{};
-    }
+	if (round(anim->mDuration) != anim->mDuration)
+	{
+		throw std::exception{};
+	}
 
-    for (auto i = 0u; i < anim->mNumChannels; i++)
-    {
-        const auto ndAnim = anim->mChannels[i]; //Channel
-        animationMatrices.insert(std::make_pair(ndAnim->mNodeName.C_Str(), std::vector<aiMatrix4x4>((int)anim->mDuration)));
-        auto& vector = animationMatrices.at(ndAnim->mNodeName.C_Str());
+	auto boneMapping = std::unordered_map<std::string, int>();
+	FindBones(scene, boneMapping);
 
-        for (auto j = 0; j < anim->mDuration; j++)
-        {
-            vector[j] = GetKeyframe(anim->mChannels[i], j);
-        }
-    }
+	vertexWeights.resize(scene->mNumMeshes);
+	for (auto i = 0u; i < scene->mNumMeshes; i++)
+	{
+		auto& meshVertexWeights = vertexWeights[i];
+		meshVertexWeights.resize(scene->mMeshes[i]->mNumVertices);
+		
+		for (auto j = 0u; j < scene->mMeshes[i]->mNumBones; j++)
+		{
+			const auto& bone = scene->mMeshes[i]->mBones[j];
+			auto boneIndex = boneMapping.find(bone->mName.C_Str())->second;
+			for (auto k = 0u; k < bone->mNumWeights; k++)
+			{
+				const auto& weight = bone->mWeights[k];
+				meshVertexWeights[weight.mVertexId].push_back(std::make_pair(weight.mWeight, boneIndex));
+			}
+		}
+	}
+
+	animationMatrices.resize(boneMapping.size());
+	for (const auto& mapping : boneMapping)
+	{
+		const auto node = scene->mRootNode->FindNode(mapping.first.data());
+		animationMatrices[mapping.second] = std::vector<aiMatrix4x4>(static_cast<int>(anim->mDuration), node->mTransformation);
+	}
+	
+	for (auto i = 0u; i < anim->mNumChannels; i++)
+	{
+		const auto ndAnim = anim->mChannels[i];
+		// const auto node = scene->mRootNode->FindNode(ndAnim->mNodeName);
+		const auto mapping = boneMapping.find(ndAnim->mNodeName.C_Str());
+		if (mapping == boneMapping.end())
+		{
+			__debugbreak();
+		}
+
+		for (auto j = 0; j < anim->mDuration; j++)
+		{
+			animationMatrices[mapping->second][j] = GetKeyframe(anim->mChannels[i], j);
+		}
+	}
+
+	for (const auto& mapping : boneMapping)
+	{
+		const auto node = scene->mRootNode->FindNode(mapping.first.data());
+		bones[mapping.second].matrix.resize(static_cast<int>(anim->mDuration));
+		for (auto i = 0; i < static_cast<int>(anim->mDuration); i++)
+		{
+			bones[mapping.second].matrix[i] = FindMatrix(boneMapping, node, i) * bones[mapping.second].offsetMatrix;
+		}
+	}
 }
 
 void loadScene(int newSceneId)
@@ -441,10 +571,8 @@ void loadScene(int newSceneId)
 	{
 	case 0:
 		loadModel("data2/ArmyPilot/ArmyPilot.x", "");
-            modelRotn = -1;
-
-//        loadModel("data2/Walk.bvh", "");
-//            modelRotn = 1;
+		modelRotn = -1;
+		modelRotn = 0;
 		break;
 	case 1:
 		loadModel("data2/Mannequin/mannequin.fbx", "data2/Mannequin/run.fbx");
@@ -462,16 +590,17 @@ void loadScene(int newSceneId)
 		modelRotn = 0;
 		break;
 
-		default:
-	        throw std::exception{};
+	default:
+		throw std::exception{};
 	}
 
-    currTick = 1;
+	currTick = 1;
 
 	UpdateAnimationMatrices();
 
 	// printAnimInfo(scene);
 }
+
 //--------------------OpenGL initialization------------------------
 void initialise()
 {
@@ -519,51 +648,14 @@ void initialise()
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, colour);
 }
 
-//void updateNodeMatrices(int tick)
-//{
-//	auto sourceScene = animationScene ? animationScene : scene;
-//
-//	if (!sourceScene->mAnimations)
-//	{
-//		return;
-//	}
-//
-//	const auto anim = sourceScene->mAnimations[0];
-//
-//	for (auto i = 0; i < anim->mNumChannels; i++)
-//	{
-//		auto matPos = aiMatrix4x4(); //Identity
-//		auto matRot = aiMatrix4x4();
-//		const auto ndAnim = anim->mChannels[i]; //Channel
-//
-//		auto index = std::min(std::max(tick, 0), static_cast<int>(ndAnim->mNumPositionKeys) - 1);
-//
-//		auto posn = ndAnim->mPositionKeys[index].mValue;
-//		aiMatrix4x4::Translation(posn, matPos);
-//
-//		index = std::min(std::max(tick, 0), static_cast<int>(ndAnim->mNumRotationKeys) - 1);
-//
-//		auto rotn = ndAnim->mRotationKeys[index].mValue;
-//		auto matRot3 = rotn.GetMatrix();
-//		matRot = aiMatrix4x4(matRot3);
-//		const auto matProd = matPos * matRot;
-//
-//		auto nd = scene->mRootNode->FindNode(ndAnim->mNodeName);
-//		if (nd)
-//		{
-//			nd->mTransformation = matProd;
-//		}
-//	}
-//}
-
 //----Timer callback for continuous rotation of the model about y-axis----
 void update(int)
 {
-	int timeSinceStart = glutGet(GLUT_ELAPSED_TIME);
-	int deltaTime = timeSinceStart - oldTimeSinceStart;
+	const auto timeSinceStart = glutGet(GLUT_ELAPSED_TIME);
+	const auto deltaTime = timeSinceStart - oldTimeSinceStart;
 	oldTimeSinceStart = timeSinceStart;
 
-	float delta = deltaTime * 0.001f;
+	const auto delta = deltaTime * 0.001f;
 	
 	if (specialKeyState[GLUT_KEY_LEFT])
 	{
@@ -601,15 +693,15 @@ void update(int)
 		}
 	}
 
-	if (currTick >= tDuration)
-	{
-		currTick = 0;
-	}
-//	updateNodeMatrices(currTick);
+	//	updateNodeMatrices(currTick);
 	get_bounding_box(scene, &scene_min, &scene_max);
 	scene_center = (scene_max - scene_min) * 0.5f + scene_min;
 	scene_center = scene_center.Normalize();
 	currTick++;
+	if (currTick >= tDuration)
+	{
+		currTick = 0;
+	}
 	
 	glutPostRedisplay();
 	glutTimerFunc(timeStep, update, 0);
@@ -643,18 +735,22 @@ void keyboardCallback(unsigned char key, int x, int y)
 	keyState[key] = true;
 }
 
-void keyboardUpCallback(unsigned char key, int, int) {
+void keyboardUpCallback(unsigned char key, int, int)
+{
 	keyState[key] = false;
 }
 
-void specialCallback(int key, int, int) {
-	if (key >= 0 && key <= GLUT_KEY_INSERT) {
+void specialCallback(int key, int, int)
+{
+	if (key >= 0 && key <= GLUT_KEY_INSERT)
+	{
 		specialKeyState[key] = true;
 	}
 }
 
 void specialUpCallback(int key, int, int) {
-	if (key >= 0 && key <= GLUT_KEY_INSERT) {
+	if (key >= 0 && key <= GLUT_KEY_INSERT)
+	{
 		specialKeyState[key] = false;
 	}
 }
@@ -770,7 +866,7 @@ void renderScene(bool shadow)
 	// center the model
 	glTranslatef(-xc, -yc, -zc);
 
-	render(scene, scene->mRootNode, shadow);
+	render(scene, shadow);
 	glPopMatrix();
 }
 
@@ -816,24 +912,7 @@ int main(int argc, char** argv)
 	glutInitContextVersion(4, 2);
 	glutInitContextProfile(GLUT_COMPATIBILITY_PROFILE);
 	glutSetKeyRepeat(false);
-#ifndef NDEBUG
-	glutInitContextFlags(GLUT_DEBUG);
-#endif
 	glutCreateWindow("COSC 422 Assignment 2 - MJS351 - Animation");
-
-#ifndef NDEBUG
-	if (glewInit() == GLEW_OK)
-	{
-		std::cout << "GLEW initialization successful! " << std::endl;
-		std::cout << " Using GLEW version " << glewGetString(GLEW_VERSION) << std::endl;
-	}
-	else
-	{
-		std::cerr << "Unable to initialize GLEW  ...exiting." << std::endl;
-		exit(EXIT_FAILURE);
-	}
-	glDebugMessageCallback(debugCallback, nullptr);
-#endif
 
 	initialise();
 	glutDisplayFunc(display);
