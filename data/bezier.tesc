@@ -47,13 +47,13 @@ void main() {
         gl_TessLevelOuter[3] = calculateTesselation((gl_in[3].gl_Position.xyz + gl_in[7].gl_Position.xyz + gl_in[11].gl_Position.xyz + gl_in[15].gl_Position.xyz) / 4);
     }
 
-//    vec3 controlPosition = gl_in[gl_InvocationID].gl_Position.xyz;
-    vec3 controlPosition = centre.xyz;
+    vec3 controlPosition = gl_in[gl_InvocationID].gl_Position.xyz;
+//    vec3 controlPosition = centre.xyz;
     float velocity = INITIAL_VELOCITY * translate.y;
     float finalTime = -(velocity + sqrt(velocity * velocity - 2 * GRAVITY * controlPosition.y)) / GRAVITY;
 
     vec3 position = gl_in[gl_InvocationID].gl_Position.xyz;
-    float realTime = clamp(time, 0, finalTime);
+    float realTime = clamp(time, 0, finalTime - 0.1);
     position.y += velocity * realTime + 0.5 * GRAVITY * realTime * realTime;
     position.xz += translate.xz * realTime * 2;
 

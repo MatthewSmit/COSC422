@@ -14,6 +14,9 @@
 #include <assimp/postprocess.h>
 #include "assimp_extras.h"
 
+#include <unordered_map>
+#include <vector>
+
 #ifndef NDEBUG
 void GLAPIENTRY debugCallback(GLenum source,
                               GLenum type,
@@ -85,7 +88,7 @@ bool dwarfSpecial = false;
 int currentSceneId = 0;
 const int maxSceneId = 3;
 
-void updateNodeMatrices(int);
+std::unordered_map<std::string, std::vector<aiMatrix4x4>> animationMatrices;
 
 //-------------Loads texture files using DevIL library-------------------------------
 void loadGLTextures(const std::string& path, const aiScene* scene)
@@ -177,7 +180,12 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 		aiReleaseImport(animationScene);
 	}
 
-	scene = aiImportFile(fileName.c_str(), aiProcessPreset_TargetRealtime_MaxQuality | aiProcess_Debone);
+	auto flags = aiProcessPreset_TargetRealtime_MaxQuality;
+	if (fileName.compare(fileName.size() - 4, 4, ".bvh") == 0)
+    {
+	    flags |= aiProcess_Debone;
+    }
+	scene = aiImportFile(fileName.c_str(), flags);
 	if (scene == nullptr)
 	{
 		throw std::exception();
@@ -185,7 +193,7 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 
 	if (!animationFileName.empty())
 	{
-		animationScene = aiImportFile(animationFileName.c_str(), aiProcessPreset_TargetRealtime_MaxQuality | aiProcess_Debone);
+		animationScene = aiImportFile(animationFileName.c_str(), aiProcessPreset_TargetRealtime_MaxQuality);
 		if (animationScene == nullptr)
 		{
 			throw std::exception();
@@ -321,6 +329,102 @@ void render(const aiScene* sc, const aiNode* nd, bool shadow)
 	glPopMatrix();
 }
 
+aiMatrix4x4 GetKeyframe(aiNodeAnim *pAnim, int j) {
+    aiVector3D position;
+    auto foundPosition = false;
+    if (pAnim->mNumPositionKeys == 1) {
+        position = pAnim->mPositionKeys[0].mValue;
+        foundPosition = true;
+    } else {
+        for (auto i = 0u; i < pAnim->mNumPositionKeys; i++) {
+            if (pAnim->mPositionKeys[i].mTime == j) {
+                position = pAnim->mPositionKeys[i].mValue;
+                foundPosition = true;
+                break;
+            } else if (i > 0 && pAnim->mPositionKeys[i - 1].mTime < j && pAnim->mPositionKeys[i].mTime >= j) {
+                auto previous = pAnim->mPositionKeys[i - 1].mValue;
+                auto current = pAnim->mPositionKeys[i].mValue;
+                auto delta = (j - pAnim->mPositionKeys[i - 1].mTime) / (pAnim->mPositionKeys[i].mTime - pAnim->mPositionKeys[i - 1].mTime);
+                position = (current - previous).SymMul(aiVector3D(delta)) + previous;
+                foundPosition = true;
+                break;
+            }
+        }
+    }
+
+    if (!foundPosition) {
+        asm("int3");
+        throw std::exception{};
+    }
+
+    aiQuaternion rotation;
+    auto foundRotation = false;
+    if (pAnim->mNumRotationKeys == 1) {
+        rotation = pAnim->mRotationKeys[0].mValue;
+        foundRotation = true;
+    } else {
+        for (auto i = 0u; i < pAnim->mNumRotationKeys; i++) {
+            if (pAnim->mRotationKeys[i].mTime == j) {
+                rotation = pAnim->mRotationKeys[i].mValue;
+                foundRotation = true;
+                break;
+            } else if (i > 0 && pAnim->mRotationKeys[i - 1].mTime < j && pAnim->mRotationKeys[i].mTime >= j) {
+                auto previous = pAnim->mRotationKeys[i - 1].mValue;
+                auto current = pAnim->mRotationKeys[i].mValue;
+                auto delta = (j - pAnim->mRotationKeys[i - 1].mTime) / (pAnim->mRotationKeys[i].mTime - pAnim->mRotationKeys[i - 1].mTime);
+                aiQuaternion::Interpolate(rotation, previous, current, delta);
+                foundRotation = true;
+                break;
+            }
+        }
+    }
+
+    if (!foundRotation) {
+        asm("int3");
+        throw std::exception{};
+    }
+
+    // TODO: Scale?
+
+    aiMatrix4x4 positionMatrix;
+    aiMatrix4x4::Translation(position, positionMatrix);
+
+    aiMatrix4x4 rotationMatrix = aiMatrix4x4(rotation.GetMatrix());
+
+    return positionMatrix * rotationMatrix;
+}
+
+void UpdateAnimationMatrices()
+{
+    animationMatrices.clear();
+
+    auto sourceScene = animationScene ? animationScene : scene;
+
+    if (!sourceScene->mAnimations)
+    {
+        throw std::exception{};
+    }
+
+    const auto anim = sourceScene->mAnimations[0];
+
+    if (round(anim->mDuration) != anim->mDuration)
+    {
+        throw std::exception{};
+    }
+
+    for (auto i = 0u; i < anim->mNumChannels; i++)
+    {
+        const auto ndAnim = anim->mChannels[i]; //Channel
+        animationMatrices.insert(std::make_pair(ndAnim->mNodeName.C_Str(), std::vector<aiMatrix4x4>((int)anim->mDuration)));
+        auto& vector = animationMatrices.at(ndAnim->mNodeName.C_Str());
+
+        for (auto j = 0; j < anim->mDuration; j++)
+        {
+            vector[j] = GetKeyframe(anim->mChannels[i], j);
+        }
+    }
+}
+
 void loadScene(int newSceneId)
 {
 	currentSceneId = newSceneId;
@@ -337,10 +441,13 @@ void loadScene(int newSceneId)
 	{
 	case 0:
 		loadModel("data2/ArmyPilot/ArmyPilot.x", "");
-		modelRotn = -1;
+            modelRotn = -1;
+
+//        loadModel("data2/Walk.bvh", "");
+//            modelRotn = 1;
 		break;
 	case 1:
-		loadModel("data2/Mannequin/mannequin.fbx", "data2/Mannequin/Run.fbx");
+		loadModel("data2/Mannequin/mannequin.fbx", "data2/Mannequin/run.fbx");
 		modelRotn = 0;
 		break;
 	case 2:
@@ -354,7 +461,14 @@ void loadScene(int newSceneId)
 		}
 		modelRotn = 0;
 		break;
+
+		default:
+	        throw std::exception{};
 	}
+
+    currTick = 1;
+
+	UpdateAnimationMatrices();
 
 	// printAnimInfo(scene);
 }
@@ -405,42 +519,42 @@ void initialise()
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, colour);
 }
 
-void updateNodeMatrices(int tick)
-{
-	auto sourceScene = animationScene ? animationScene : scene;
-	
-	if (!sourceScene->mAnimations)
-	{
-		return;
-	}
-
-	const auto anim = sourceScene->mAnimations[0];
-
-	for (auto i = 0; i < anim->mNumChannels; i++)
-	{
-		auto matPos = aiMatrix4x4(); //Identity
-		auto matRot = aiMatrix4x4();
-		const auto ndAnim = anim->mChannels[i]; //Channel
-
-		auto index = std::min(std::max(tick, 0), static_cast<int>(ndAnim->mNumPositionKeys) - 1);
-
-		auto posn = ndAnim->mPositionKeys[index].mValue;
-		aiMatrix4x4::Translation(posn, matPos);
-
-		index = std::min(std::max(tick, 0), static_cast<int>(ndAnim->mNumRotationKeys) - 1);
-
-		auto rotn = ndAnim->mRotationKeys[index].mValue;
-		auto matRot3 = rotn.GetMatrix();
-		matRot = aiMatrix4x4(matRot3);
-		const auto matProd = matPos * matRot;
-
-		auto nd = scene->mRootNode->FindNode(ndAnim->mNodeName);
-		if (nd)
-		{
-			nd->mTransformation = matProd;
-		}
-	}
-}
+//void updateNodeMatrices(int tick)
+//{
+//	auto sourceScene = animationScene ? animationScene : scene;
+//
+//	if (!sourceScene->mAnimations)
+//	{
+//		return;
+//	}
+//
+//	const auto anim = sourceScene->mAnimations[0];
+//
+//	for (auto i = 0; i < anim->mNumChannels; i++)
+//	{
+//		auto matPos = aiMatrix4x4(); //Identity
+//		auto matRot = aiMatrix4x4();
+//		const auto ndAnim = anim->mChannels[i]; //Channel
+//
+//		auto index = std::min(std::max(tick, 0), static_cast<int>(ndAnim->mNumPositionKeys) - 1);
+//
+//		auto posn = ndAnim->mPositionKeys[index].mValue;
+//		aiMatrix4x4::Translation(posn, matPos);
+//
+//		index = std::min(std::max(tick, 0), static_cast<int>(ndAnim->mNumRotationKeys) - 1);
+//
+//		auto rotn = ndAnim->mRotationKeys[index].mValue;
+//		auto matRot3 = rotn.GetMatrix();
+//		matRot = aiMatrix4x4(matRot3);
+//		const auto matProd = matPos * matRot;
+//
+//		auto nd = scene->mRootNode->FindNode(ndAnim->mNodeName);
+//		if (nd)
+//		{
+//			nd->mTransformation = matProd;
+//		}
+//	}
+//}
 
 //----Timer callback for continuous rotation of the model about y-axis----
 void update(int)
@@ -491,7 +605,7 @@ void update(int)
 	{
 		currTick = 0;
 	}
-	updateNodeMatrices(currTick);
+//	updateNodeMatrices(currTick);
 	get_bounding_box(scene, &scene_min, &scene_max);
 	scene_center = (scene_max - scene_min) * 0.5f + scene_min;
 	scene_center = scene_center.Normalize();
