@@ -3,9 +3,9 @@
 //  ========================================================================
 
 // TODO: Cache vertex/normals - speedup
-// TODO: Transform normals properly - ask mukandun
 // TODO: SceneMin/Max per frame
 // TODO: Track movement and move floor plane accordingly
+// TODO: Remap properly
 
 #include <GL/freeglut.h>
 
@@ -16,8 +16,9 @@
 #include <assimp/scene.h>
 #include <assimp/types.h>
 
-#include "assimp_extras.h"
+//#include "assimp_extras.h"
 
+#include <cmath>
 #include <iostream>
 #include <unordered_map>
 #include <vector>
@@ -26,12 +27,8 @@
 const aiScene* scene = NULL;
 const aiScene* animationScene = NULL;
 int oldTimeSinceStart;
-float angle = 0;
+float angle = 135;
 float distance = 5;
-aiVector3D scene_min;
-aiVector3D scene_max;
-aiVector3D scene_center;
-int modelRotn = 0;
 std::unordered_map<int, int> texIdMap;
 GLuint floorTexture;
 bool keyState[256] = {};
@@ -51,13 +48,27 @@ bool dwarfSpecial = false;
 int currentSceneId = 0;
 const int maxSceneId = 3;
 
+#if !defined(_MSC_VER)
+#define __debugbreak() asm("int3")
+#endif
+
 struct BoneInfo
 {
 	aiMatrix4x4 offsetMatrix;
 	std::vector<aiMatrix4x4> matrix;
+	std::vector<aiMatrix4x4> invmatrix;
 	int parentIndex;
 };
 
+struct ScenePositions
+{
+    aiVector3D min;
+    aiVector3D max;
+    aiVector3D center;
+    float scale;
+};
+
+ScenePositions positions{};
 std::vector<BoneInfo> bones{};
 std::vector<std::vector<aiMatrix4x4>> animationMatrices{};
 std::vector<std::vector<std::vector<std::pair<float, int>>>> vertexWeights{};
@@ -218,7 +229,7 @@ aiMatrix4x4 FindMatrix(std::unordered_map<std::string, int>& boneMapping, aiNode
 	}
 	else
 	{
-		transformation = animationMatrices[mapping->second][tick];
+		transformation = animationMatrices.at(mapping->second).at(tick);
 	}
 	
 	if (node->mParent == NULL)
@@ -229,28 +240,12 @@ aiMatrix4x4 FindMatrix(std::unordered_map<std::string, int>& boneMapping, aiNode
 	return FindMatrix(boneMapping, node->mParent, tick) * transformation;
 }
 
-aiVector3D TransformVertex(const aiVector3D& point, const std::vector<std::pair<float, int>>& vertexWeights)
-{
-	return bones[vertexWeights[0].second].matrix[currTick] * point;
-}
-
 // ------A recursive function to traverse scene graph and render each mesh----------
 void render(const aiScene* sc, bool shadow)
 {
 	for (auto j = 0u; j < sc->mNumMeshes; j++)
 	{
-		const auto& meshWeights = vertexWeights[j];
-		// auto m = nd->mTransformation;
-		//
-		// aiTransposeMatrix4(&m); //Convert to column-major order
-		// glPushMatrix();
-		// glMultMatrixf(reinterpret_cast<float*>(&m)); //Multiply by the transformation matrix for this node
-		//
-		// // Draw all meshes assigned to this node
-		// for (auto n = 0; n < nd->mNumMeshes; n++)
-		// {
-		// 	const int meshIndex = nd->mMeshes[n]; //Get the mesh indices from the current node
-		// 	auto mesh = scene->mMeshes[meshIndex]; //Using mesh index, get the mesh object
+        const auto& meshWeights = vertexWeights.at(j);
 		auto mesh = scene->mMeshes[j];
 		
 		if (mesh->HasTextureCoords(0) && !shadow)
@@ -307,7 +302,7 @@ void render(const aiScene* sc, bool shadow)
 			for (auto i = 0u; i < face->mNumIndices; i++)
 			{
 				const int vertexIndex = face->mIndices[i];
-				const auto& vertexWeight = meshWeights[vertexIndex];
+				const auto& vertexWeight = meshWeights.at(vertexIndex);
 				
 				if (shadow)
 				{
@@ -323,25 +318,24 @@ void render(const aiScene* sc, bool shadow)
 				
 				if (mesh->HasNormals())
 				{
-					auto normal = TransformVertex(mesh->mNormals[vertexIndex], vertexWeight);
+                    aiVector3D normal = aiVector3D();
+                    for (auto weight : vertexWeight)
+                    {
+                        normal += bones.at(weight.second).invmatrix.at(currTick) * mesh->mNormals[vertexIndex] * weight.first;
+                    }
 					glNormal3fv(&normal.x);
 				}
-				
-				auto vertex = TransformVertex(mesh->mVertices[vertexIndex], vertexWeight);
+
+                aiVector3D vertex = aiVector3D();
+                for (auto weight : vertexWeight)
+                {
+                    vertex += bones.at(weight.second).matrix.at(currTick) * mesh->mVertices[vertexIndex] * weight.first;
+                }
 				glVertex3fv(&vertex.x);
 			}
 			
 			glEnd();
-			// 	}
 		}
-		
-		// // Draw all children
-		// for (auto i = 0u; i < nd->mNumChildren; i++)
-		// {
-		// 	render(sc, nd->mChildren[i], shadow);
-		// }
-		//
-		// glPopMatrix();
 	}
 }
 
@@ -434,7 +428,7 @@ void FindBones(const aiNode* node, std::unordered_map<std::string, int>& boneMap
 	if (boneMapping.find(node->mName.C_Str()) == boneMapping.end())
 	{
 		boneMapping.insert(std::make_pair(node->mName.C_Str(), bones.size()));
-		bones.push_back({aiMatrix4x4(), {}, -1});
+		bones.push_back({aiMatrix4x4(), {}, {}, -1});
 	}
 	
 	for (auto i = 0u; i < node->mNumChildren; i++)
@@ -453,7 +447,7 @@ void FindBones(const aiScene* scene, std::unordered_map<std::string, int>& boneM
 			if (boneMapping.find(bone->mName.C_Str()) == boneMapping.end())
 			{
 				boneMapping.insert(std::make_pair(bone->mName.C_Str(), bones.size()));
-				bones.push_back({bone->mOffsetMatrix, {}, -1});
+				bones.push_back({bone->mOffsetMatrix, {}, {}, -1});
 			}
 		}
 	}
@@ -473,7 +467,7 @@ void FindBones(const aiScene* scene, std::unordered_map<std::string, int>& boneM
 			}
 			else
 			{
-				bones[mapping.second].parentIndex = parentIndex->second;
+				bones.at(mapping.second).parentIndex = parentIndex->second;
 				break;
 			}
 		}
@@ -506,7 +500,7 @@ void UpdateAnimationMatrices()
 	vertexWeights.resize(scene->mNumMeshes);
 	for (auto i = 0u; i < scene->mNumMeshes; i++)
 	{
-		auto& meshVertexWeights = vertexWeights[i];
+		auto& meshVertexWeights = vertexWeights.at(i);
 		meshVertexWeights.resize(scene->mMeshes[i]->mNumVertices);
 		
 		for (auto j = 0u; j < scene->mMeshes[i]->mNumBones; j++)
@@ -516,7 +510,7 @@ void UpdateAnimationMatrices()
 			for (auto k = 0u; k < bone->mNumWeights; k++)
 			{
 				const auto& weight = bone->mWeights[k];
-				meshVertexWeights[weight.mVertexId].push_back(std::make_pair(weight.mWeight, boneIndex));
+				meshVertexWeights.at(weight.mVertexId).push_back(std::make_pair(weight.mWeight, boneIndex));
 			}
 		}
 	}
@@ -525,7 +519,7 @@ void UpdateAnimationMatrices()
 	for (const auto& mapping : boneMapping)
 	{
 		const auto node = scene->mRootNode->FindNode(mapping.first.data());
-		animationMatrices[mapping.second] = std::vector<aiMatrix4x4>(static_cast<int>(anim->mDuration), node->mTransformation);
+		animationMatrices.at(mapping.second) = std::vector<aiMatrix4x4>(static_cast<int>(anim->mDuration), node->mTransformation);
 	}
 	
 	for (auto i = 0u; i < anim->mNumChannels; i++)
@@ -540,23 +534,67 @@ void UpdateAnimationMatrices()
 
 		for (auto j = 0; j < anim->mDuration; j++)
 		{
-			animationMatrices[mapping->second][j] = GetKeyframe(anim->mChannels[i], j);
+			animationMatrices.at(mapping->second).at(j) = GetKeyframe(anim->mChannels[i], j);
 		}
 	}
 
 	for (const auto& mapping : boneMapping)
 	{
 		const auto node = scene->mRootNode->FindNode(mapping.first.data());
-		bones[mapping.second].matrix.resize(static_cast<int>(anim->mDuration));
+		bones.at(mapping.second).matrix.resize(static_cast<int>(anim->mDuration));
+		bones.at(mapping.second).invmatrix.resize(static_cast<int>(anim->mDuration));
 		for (auto i = 0; i < static_cast<int>(anim->mDuration); i++)
 		{
-			bones[mapping.second].matrix[i] = FindMatrix(boneMapping, node, i) * bones[mapping.second].offsetMatrix;
+			bones.at(mapping.second).matrix.at(i) = FindMatrix(boneMapping, node, i) * bones.at(mapping.second).offsetMatrix;
+			bones.at(mapping.second).invmatrix.at(i) = bones.at(mapping.second).matrix.at(i);
+            bones.at(mapping.second).invmatrix.at(i).Transpose().Inverse();
 		}
 	}
 }
 
+void get_bounding_box()
+{
+    positions.min = aiVector3D(+1e10f);
+    positions.max = aiVector3D(-1e10f);
+
+    for (auto n = 0u; n < scene->mNumMeshes; ++n)
+    {
+        const aiMesh* mesh = scene->mMeshes[n];
+        const auto& meshWeights = vertexWeights.at(n);
+
+        for (auto k = 0u; k < mesh->mNumFaces; k++) {
+            const auto face = &mesh->mFaces[k];
+            for (auto i = 0u; i < face->mNumIndices; i++) {
+                const int vertexIndex = face->mIndices[i];
+                const auto &vertexWeight = meshWeights.at(vertexIndex);
+                aiVector3D tmp = aiVector3D();
+                for (auto weight : vertexWeight)
+                {
+                    tmp += bones.at(weight.second).matrix.at(currTick) * mesh->mVertices[vertexIndex] * weight.first;
+                }
+
+                positions.min.x = std::min(positions.min.x, tmp.x);
+                positions.min.y = std::min(positions.min.y, tmp.y);
+                positions.min.z = std::min(positions.min.z, tmp.z);
+
+                positions.max.x = std::max(positions.max.x, tmp.x);
+                positions.max.y = std::max(positions.max.y, tmp.y);
+                positions.max.z = std::max(positions.max.z, tmp.z);
+            }
+        }
+    }
+
+	auto tmp = positions.max.x - positions.min.x;
+	tmp = std::max(positions.max.y - positions.min.y, tmp);
+	tmp = std::max(positions.max.z - positions.min.z, tmp);
+	positions.scale = 1.0f / tmp;
+
+    positions.center = ((positions.max - positions.min) * 0.5f + positions.min) * positions.scale;
+}
+
 void loadScene(int newSceneId)
 {
+    currTick = 0;
 	currentSceneId = newSceneId;
 	if (currentSceneId < 0)
 	{
@@ -571,37 +609,30 @@ void loadScene(int newSceneId)
 	{
 	case 0:
 		loadModel("data2/ArmyPilot/ArmyPilot.x", "");
-		modelRotn = -1;
-		modelRotn = 0;
 		break;
 	case 1:
 		loadModel("data2/Mannequin/mannequin.fbx", "data2/Mannequin/run.fbx");
-		modelRotn = 0;
 		break;
 	case 2:
 		if (dwarfSpecial)
 		{
-			loadModel("data2/Dwarf/dwarf.x", "data2/Walk.bvh");
+			loadModel("data2/Dwarf/dwarf.x", "data2/Dwarf/avatar_walk.bvh");
 		}
 		else
 		{
 			loadModel("data2/Dwarf/dwarf.x", "");
 		}
-		modelRotn = 0;
 		break;
 
 	default:
 		throw std::exception{};
 	}
 
-	currTick = 1;
-
 	UpdateAnimationMatrices();
 
-	// printAnimInfo(scene);
+    get_bounding_box();
 }
 
-//--------------------OpenGL initialization------------------------
 void initialise()
 {
 	float ambient[4] = {0.2, 0.2, 0.2, 1.0}; //Ambient light
@@ -648,7 +679,6 @@ void initialise()
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, colour);
 }
 
-//----Timer callback for continuous rotation of the model about y-axis----
 void update(int)
 {
 	const auto timeSinceStart = glutGet(GLUT_ELAPSED_TIME);
@@ -693,10 +723,6 @@ void update(int)
 		}
 	}
 
-	//	updateNodeMatrices(currTick);
-	get_bounding_box(scene, &scene_min, &scene_max);
-	scene_center = (scene_max - scene_min) * 0.5f + scene_min;
-	scene_center = scene_center.Normalize();
 	currTick++;
 	if (currTick >= tDuration)
 	{
@@ -707,7 +733,6 @@ void update(int)
 	glutTimerFunc(timeStep, update, 0);
 }
 
-//----Keyboard callback to toggle initial model orientation---
 void keyboardCallback(unsigned char key, int x, int y)
 {
 	if (key == '1' && currentSceneId == 2)
@@ -782,7 +807,7 @@ void drawPlane()
 
 void normalise(const float input[4], float output[4])
 {
-	const auto size = sqrt(input[0] * input[0] +
+	const auto size = std::sqrt(input[0] * input[0] +
 		input[1] * input[1] +
 		input[2] * input[2] +
 		input[3] * input[3]);
@@ -841,50 +866,34 @@ void renderScene(bool shadow)
 	}
 	glPushMatrix();
 
-	glTranslatef(0, 0.5, 0);
-	
-	// glRotatef(angle, 0.f, 1.f, 0.0f); //Continuous rotation about the y-axis
-	if (modelRotn == -1)
-	{
-		glRotatef(90, 1, 0, 0); //First, rotate the model about x-axis if needed.
-	}
-	if (modelRotn == 1)
-	{
-		glRotatef(-90, 1, 0, 0); //First, rotate the model about x-axis if needed.
-	}
+	glTranslatef(0, -positions.min.y * positions.scale, 0);
 
 	// scale the whole asset to fit into our view frustum
-	auto tmp = scene_max.x - scene_min.x;
-	tmp = aisgl_max(scene_max.y - scene_min.y, tmp);
-	tmp = aisgl_max(scene_max.z - scene_min.z, tmp);
-	tmp = 1.0f / tmp;
-	glScalef(tmp, tmp, tmp);
+	glScalef(positions.scale, positions.scale, positions.scale);
 
-	const float xc = (scene_min.x + scene_max.x) * 0.5;
-	const float yc = (scene_min.y + scene_max.y) * 0.5;
-	const float zc = (scene_min.z + scene_max.z) * 0.5;
+//	const float xc = (scene_min.x + scene_max.x) * 0.5;
+//	const float yc = (scene_min.y + scene_max.y) * 0.5;
+//	const float zc = (scene_min.z + scene_max.z) * 0.5;
 	// center the model
-	glTranslatef(-xc, -yc, -zc);
+//	glTranslatef(-xc, -yc, -zc);
+	glTranslatef(-positions.center.x, -positions.center.y, -positions.center.z);
 
 	render(scene, shadow);
 	glPopMatrix();
 }
 
-//------The main display function---------
-//----The model is first drawn using a display list so that all GL commands are
-//    stored for subsequent display updates.
 void display()
 {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	gluLookAt(sin(AI_DEG_TO_RAD(angle)) * distance, 
-	          scene_center.y + distance / 2,
-	          cos(AI_DEG_TO_RAD(angle)) * distance, 
-	          scene_center.x, 
-	          scene_center.y, 
-	          scene_center.z, 
+	gluLookAt(sin(AI_DEG_TO_RAD(angle)) * distance,
+              positions.center.y + distance / 2,
+	          cos(AI_DEG_TO_RAD(angle)) * distance,
+              positions.center.x,
+              positions.center.y,
+              positions.center.z,
 	          0, 1, 0);
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPosn);
 
