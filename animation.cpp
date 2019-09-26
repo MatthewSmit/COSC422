@@ -44,8 +44,8 @@ int tDuration; //Animation duration in ticks.
 int currTick = 0; //current tick
 int timeStep = 50; //Animation time step = 50 m.sec
 
-bool dwarfSpecial = true;
-int currentSceneId = 2;
+bool dwarfSpecial = false;
+int currentSceneId = 0;
 const int maxSceneId = 3;
 
 #if !defined(_MSC_VER)
@@ -62,10 +62,10 @@ struct BoneInfo
 
 struct ScenePositions
 {
-    aiVector3D min;
-    aiVector3D max;
-    aiVector3D center;
-    float scale;
+	aiVector3D min;
+	aiVector3D max;
+	aiVector3D center;
+	float scale;
 };
 
 ScenePositions positions{};
@@ -73,6 +73,17 @@ std::vector<BoneInfo> bones{};
 std::vector<std::vector<aiMatrix4x4>> animationMatrices{};
 std::vector<std::vector<std::vector<std::pair<float, int>>>> vertexWeights{};
 std::vector<aiVector3D> movementDeltas = std::vector<aiVector3D>(1000, aiVector3D());
+std::unordered_map<std::string, std::string> dwarfRemapping
+{
+	{"lhip", "rThigh"},
+	{"rhip", "lThigh"},
+	{"lknee", "rShin"},
+	{"rknee", "lShin"},
+	{"lankle", "rFoot"},
+	{"rankle", "lFoot"},
+	// {"ltoe", "rFoot"},
+	// {"rtoe", "lFoot"},
+};
 
 //-------------Loads texture files using DevIL library-------------------------------
 void loadGLTextures(const std::string& path, const aiScene* scene)
@@ -190,7 +201,7 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 
 	loadGLTextures(fileName.substr(0, fileName.rfind('/') + 1), scene);
 
-	if (animationScene)
+	if (animationScene && !dwarfSpecial)
 	{
 		if (animationScene->mAnimations)
 		{
@@ -241,7 +252,7 @@ void render(const aiScene* sc, bool shadow)
 {
 	for (auto j = 0u; j < sc->mNumMeshes; j++)
 	{
-        const auto& meshWeights = vertexWeights.at(j);
+		const auto& meshWeights = vertexWeights.at(j);
 		auto mesh = scene->mMeshes[j];
 		
 		if (mesh->HasTextureCoords(0) && !shadow)
@@ -314,19 +325,19 @@ void render(const aiScene* sc, bool shadow)
 				
 				if (mesh->HasNormals())
 				{
-                    aiVector3D normal = aiVector3D();
-                    for (auto weight : vertexWeight)
-                    {
-                        normal += bones.at(weight.second).invmatrix.at(currTick) * mesh->mNormals[vertexIndex] * weight.first;
-                    }
+					aiVector3D normal = aiVector3D();
+					for (auto weight : vertexWeight)
+					{
+						normal += bones.at(weight.second).invmatrix.at(currTick) * mesh->mNormals[vertexIndex] * weight.first;
+					}
 					glNormal3fv(&normal.x);
 				}
 
-                aiVector3D vertex = aiVector3D();
-                for (auto weight : vertexWeight)
-                {
-                    vertex += bones.at(weight.second).matrix.at(currTick) * mesh->mVertices[vertexIndex] * weight.first;
-                }
+				aiVector3D vertex = aiVector3D();
+				for (auto weight : vertexWeight)
+				{
+					vertex += bones.at(weight.second).matrix.at(currTick) * mesh->mVertices[vertexIndex] * weight.first;
+				}
 				glVertex3fv(&vertex.x);
 			}
 			
@@ -337,6 +348,11 @@ void render(const aiScene* sc, bool shadow)
 
 aiMatrix4x4 GetKeyframe(aiNodeAnim* pAnim, float j)
 {
+	if (dwarfSpecial && pAnim->mNodeName.C_Str() == std::string{"middle"})
+	{
+		j = 0;
+	}
+	
 	aiVector3D position;
 	auto foundPosition = false;
 	if (pAnim->mNumPositionKeys == 1)
@@ -470,13 +486,26 @@ void FindBones(const aiScene* scene, std::unordered_map<std::string, int>& boneM
 	}
 }
 
+aiNodeAnim* FindChannel(const aiAnimation* aiAnimation, const std::string& name)
+{
+	for (auto i = 0u; i < aiAnimation->mNumChannels; i++)
+	{
+		if (aiAnimation->mChannels[i]->mNodeName.C_Str() == name)
+		{
+			return aiAnimation->mChannels[i];
+		}
+	}
+	
+	throw std::exception{};
+}
+
 void UpdateAnimationMatrices()
 {
 	bones.clear();
 	animationMatrices.clear();
 	vertexWeights.clear();
 
-	const auto sourceScene = animationScene ? animationScene : scene;
+	const auto sourceScene = (animationScene && !dwarfSpecial) ? animationScene : scene;
 
 	if (!sourceScene->mAnimations)
 	{
@@ -521,16 +550,31 @@ void UpdateAnimationMatrices()
 	for (auto i = 0u; i < anim->mNumChannels; i++)
 	{
 		const auto ndAnim = anim->mChannels[i];
-		// const auto node = scene->mRootNode->FindNode(ndAnim->mNodeName);
 		const auto mapping = boneMapping.find(ndAnim->mNodeName.C_Str());
 		if (mapping == boneMapping.end())
 		{
 			__debugbreak();
 		}
 
-		for (auto j = 0; j < anim->mDuration; j++)
+		auto remapped = dwarfRemapping.find(ndAnim->mNodeName.C_Str());
+		if (dwarfSpecial && remapped != dwarfRemapping.end())
 		{
-			animationMatrices.at(mapping->second).at(j) = GetKeyframe(anim->mChannels[i], j);
+			for (auto j = 0; j < anim->mDuration; j++)
+			{
+				const auto remappedAnim = animationScene->mAnimations[0];
+				const auto remappedChannel = FindChannel(remappedAnim, remapped->second);
+				auto remappedTime = (float(j) / anim->mDuration) * remappedAnim->mDuration;
+				aiMatrix4x4 scale{};
+				aiMatrix4x4::Scaling(aiVector3D(1, 0.6, 1), scale);
+				animationMatrices.at(mapping->second).at(j) = GetKeyframe(remappedChannel, remappedTime) * scale;
+			}
+		}
+		else
+		{
+			for (auto j = 0; j < anim->mDuration; j++)
+			{
+				animationMatrices.at(mapping->second).at(j) = GetKeyframe(anim->mChannels[i], j);
+			}
 		}
 	}
 
@@ -543,7 +587,7 @@ void UpdateAnimationMatrices()
 		{
 			bones.at(mapping.second).matrix.at(i) = FindMatrix(boneMapping, node, i) * bones.at(mapping.second).offsetMatrix;
 			bones.at(mapping.second).invmatrix.at(i) = bones.at(mapping.second).matrix.at(i);
-            bones.at(mapping.second).invmatrix.at(i).Transpose().Inverse();
+			bones.at(mapping.second).invmatrix.at(i).Transpose().Inverse();
 		}
 	}
 }
@@ -614,8 +658,8 @@ void cleanup_mannequin() {
 
 void loadScene(int newSceneId)
 {
-    movementDeltas = std::vector<aiVector3D>(1000, aiVector3D());
-    currTick = 0;
+	movementDeltas = std::vector<aiVector3D>(1000, aiVector3D());
+	currTick = 0;
 	currentSceneId = newSceneId;
 	if (currentSceneId < 0)
 	{
@@ -639,9 +683,6 @@ void loadScene(int newSceneId)
 		if (dwarfSpecial)
 		{
 			loadModel("data2/Dwarf/dwarf.x", "data2/Dwarf/avatar_walk.bvh");
-			printBoneInfo(scene);
-			printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
-			printBoneInfo(animationScene);
 		}
 		else
 		{
@@ -655,7 +696,7 @@ void loadScene(int newSceneId)
 
 	UpdateAnimationMatrices();
 
-    get_bounding_box();
+	get_bounding_box();
 }
 
 void initialise()
