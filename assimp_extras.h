@@ -192,6 +192,12 @@ void printAnimInfo(const aiScene* scene)
 					std::cout <<  "        rotnKey " << k << ":  Time = " << rotnKey.mTime << " Value = " << quat[0] << " " << 
 						quat[1] << " " << quat[2] << " " << quat[3] <<std::endl;
 				}
+                for(int k = 0; k < ndAnim->mNumScalingKeys; k++)
+                {
+                    aiVectorKey sclKey = ndAnim->mScalingKeys[k];    //Note: Does not return a pointer
+                    pos = (float*)&sclKey.mValue;
+                    std::cout <<  "        sclKey " << k << ":  Time = " << sclKey.mTime << " Value = " << pos[0] << " " << pos[1] << " " << pos[2] << std::endl;
+                }
 			}
 		}
 	}

@@ -16,7 +16,7 @@
 #include <assimp/scene.h>
 #include <assimp/types.h>
 
-//#include "assimp_extras.h"
+#include "assimp_extras.h"
 
 #include <cmath>
 #include <iostream>
@@ -44,8 +44,8 @@ int tDuration; //Animation duration in ticks.
 int currTick = 0; //current tick
 int timeStep = 50; //Animation time step = 50 m.sec
 
-bool dwarfSpecial = false;
-int currentSceneId = 0;
+bool dwarfSpecial = true;
+int currentSceneId = 2;
 const int maxSceneId = 3;
 
 #if !defined(_MSC_VER)
@@ -72,6 +72,7 @@ ScenePositions positions{};
 std::vector<BoneInfo> bones{};
 std::vector<std::vector<aiMatrix4x4>> animationMatrices{};
 std::vector<std::vector<std::vector<std::pair<float, int>>>> vertexWeights{};
+std::vector<aiVector3D> movementDeltas = std::vector<aiVector3D>(1000, aiVector3D());
 
 //-------------Loads texture files using DevIL library-------------------------------
 void loadGLTextures(const std::string& path, const aiScene* scene)
@@ -186,12 +187,7 @@ bool loadModel(const std::string& fileName, const std::string& animationFileName
 	{
 		animationScene = nullptr;
 	}
-	
-	//printSceneInfo(scene);
-	//printMeshInfo(scene);
-	//printTreeInfo(scene->mRootNode);
-	//printBoneInfo(scene);
-	//printAnimInfo(scene);  //WARNING:  This may generate a lengthy output if the model has animation data
+
 	loadGLTextures(fileName.substr(0, fileName.rfind('/') + 1), scene);
 
 	if (animationScene)
@@ -339,7 +335,7 @@ void render(const aiScene* sc, bool shadow)
 	}
 }
 
-aiMatrix4x4 GetKeyframe(aiNodeAnim* pAnim, int j)
+aiMatrix4x4 GetKeyframe(aiNodeAnim* pAnim, float j)
 {
 	aiVector3D position;
 	auto foundPosition = false;
@@ -592,8 +588,33 @@ void get_bounding_box()
     positions.center = ((positions.max - positions.min) * 0.5f + positions.min) * positions.scale;
 }
 
+void cleanup_mannequin() {
+    for (auto i = 0u; i < scene->mRootNode->mNumChildren; i++) {
+        scene->mRootNode->mChildren[i]->mTransformation = aiMatrix4x4();
+    }
+
+    for (auto i = 0u; i < animationScene->mAnimations[0]->mNumChannels; i++)
+    {
+        auto channel = animationScene->mAnimations[0]->mChannels[i];
+        if (channel->mNodeName == aiString("free3dmodel_skeleton"))
+        {
+            for (auto j = 0u; j < channel->mNumPositionKeys; j++) {
+                channel->mPositionKeys[j].mValue = channel->mPositionKeys[j].mValue / 100.0f;
+                movementDeltas[j] = channel->mPositionKeys[j].mValue;
+            }
+        }
+    }
+
+//	printSceneInfo(scene);
+//    printMeshInfo(scene);
+//    printTreeInfo(scene->mRootNode);
+//    printBoneInfo(scene);
+//    printAnimInfo(animationScene);  //WARNING:  This may generate a lengthy output if the model has animation data
+}
+
 void loadScene(int newSceneId)
 {
+    movementDeltas = std::vector<aiVector3D>(1000, aiVector3D());
     currTick = 0;
 	currentSceneId = newSceneId;
 	if (currentSceneId < 0)
@@ -612,11 +633,15 @@ void loadScene(int newSceneId)
 		break;
 	case 1:
 		loadModel("data2/Mannequin/mannequin.fbx", "data2/Mannequin/run.fbx");
+		cleanup_mannequin();
 		break;
 	case 2:
 		if (dwarfSpecial)
 		{
 			loadModel("data2/Dwarf/dwarf.x", "data2/Dwarf/avatar_walk.bvh");
+			printBoneInfo(scene);
+			printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+			printBoneInfo(animationScene);
 		}
 		else
 		{
@@ -890,10 +915,10 @@ void display()
 	glLoadIdentity();
 	gluLookAt(sin(AI_DEG_TO_RAD(angle)) * distance,
               positions.center.y + distance / 2,
-	          cos(AI_DEG_TO_RAD(angle)) * distance,
+	          cos(AI_DEG_TO_RAD(angle)) * distance + movementDeltas[currTick].z * positions.scale,
               positions.center.x,
               positions.center.y,
-              positions.center.z,
+              positions.center.z + movementDeltas[currTick].z * positions.scale,
 	          0, 1, 0);
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPosn);
 
